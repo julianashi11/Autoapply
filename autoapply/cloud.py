@@ -154,8 +154,21 @@ def send_email(new, site_url):
     print(f"Emailed {len(new)} new roles to {to}.")
 
 
+def test_email(site_url):
+    """Sends the three newest roles from the live site, to check the email setup."""
+    prev = load_previous(site_url)
+    jobs = sorted(prev.get("jobs") or [], key=lambda j: -(j.get("first_seen") or 0))[:3]
+    if not jobs:
+        sys.exit("No roles on the live site yet; run a scan first.")
+    if not (os.environ.get("RESEND_API_KEY") or os.environ.get("SMTP_PASSWORD")):
+        sys.exit("No email secret is set (RESEND_API_KEY, or SMTP_USER + SMTP_PASSWORD).")
+    send_email(jobs, site_url)
+
+
 def main():
     site_url = os.environ.get("SITE_URL", "").rstrip("/")
+    if os.environ.get("TEST_EMAIL") == "true":
+        return test_email(site_url)
     prev = load_previous(site_url) if site_url else {}
     first_run = not prev
 

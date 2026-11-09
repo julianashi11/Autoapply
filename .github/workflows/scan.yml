@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "*/10 * * * *"   # GitHub may start scheduled runs a few minutes late
   workflow_dispatch:
+    inputs:
+      test_email:
+        description: "Only send a test email with the 3 newest roles"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -34,12 +39,17 @@ jobs:
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          TEST_EMAIL: ${{ inputs.test_email }}
         run: python -m autoapply.cloud
       - uses: actions/configure-pages@v5
+        if: ${{ !inputs.test_email }}
       - uses: actions/upload-pages-artifact@v3
+        if: ${{ !inputs.test_email }}
         with:
           path: _site
       - id: deploy
+        if: ${{ !inputs.test_email }}
         uses: actions/deploy-pages@v4
       - name: Fail the run if the email didn't send
+        if: ${{ !inputs.test_email }}
         run: test ! -f .email_failed || (echo "Email failed; check the RESEND_API_KEY or SMTP_USER / SMTP_PASSWORD secrets" && exit 1)
