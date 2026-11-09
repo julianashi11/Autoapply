@@ -66,6 +66,7 @@ footer{color:var(--muted);font-size:12px;margin-top:16px}
   <div class="filters">
     <input type="search" id="q" placeholder="Search company, title, location">
     <div class="seg" id="track"><button data-v="" class="on">All</button><button data-v="swe">SWE</button><button data-v="pm">PM</button></div>
+    <select id="sort"><option value="posted">Newest posted</option><option value="found">Recently found</option></select>
     <select id="when"><option value="">Any time</option><option value="1">New today</option><option value="3">Last 3 days</option><option value="7">Last 7 days</option></select>
     <select id="src"><option value="">All sources</option><option value="direct">Found on company sites first</option></select>
     <select id="mine"><option value="todo">Hide applied</option><option value="">Show all</option><option value="applied">Applied only</option></select>
@@ -84,6 +85,8 @@ try { applied = JSON.parse(localStorage.getItem("applied") || "{}"); } catch (e)
 const save = () => { try { localStorage.setItem("applied", JSON.stringify(applied)); } catch (e) {} };
 const ago = ts => { if (!ts) return ""; const d = Date.now()/1000 - ts;
   return d < 3600 ? Math.max(1, Math.round(d/60)) + "m ago" : d < 86400 ? Math.round(d/3600) + "h ago" : Math.round(d/86400) + "d ago"; };
+// Posting date when the company gave one; otherwise when it was first found.
+const posted = j => j.date_posted || j.first_seen || 0;
 const lead = j => j.found_by !== "direct" ? "" : j.source === "direct" ? "Only on company site"
   : j.lead_hours > 1 ? `Found ${j.lead_hours < 48 ? Math.round(j.lead_hours) + "h" : Math.round(j.lead_hours/24) + "d"} before GitHub` : "Found on company site first";
 
@@ -114,7 +117,9 @@ function render(){
     (!src || j.found_by === "direct") &&
     (mine !== "todo" || !applied[j.id]) && (mine !== "applied" || applied[j.id]) &&
     (!q || (j.company + " " + j.title + " " + j.locations.join(" ")).toLowerCase().includes(q)))
-    .sort((a, b) => (b.first_seen || 0) - (a.first_seen || 0) || (b.date_posted || 0) - (a.date_posted || 0));
+    .sort($("#sort").value === "found"
+      ? (a, b) => (b.first_seen || 0) - (a.first_seen || 0) || posted(b) - posted(a)
+      : (a, b) => posted(b) - posted(a) || (b.first_seen || 0) - (a.first_seen || 0));
   $("#count").textContent = `${jobs.length.toLocaleString()} role${jobs.length === 1 ? "" : "s"}`;
   const day = Date.now()/1000 - 86400;
   $("#list").innerHTML = jobs.slice(0, 500).map(j => {
@@ -123,7 +128,7 @@ function render(){
     return `<div class="job ${done ? "done" : ""}">
       <div class="main"><div class="co">${esc(j.company)}</div>
         <a class="ti" href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.title)}</a>
-        <div class="meta">${loc}${loc ? " · " : ""}found ${ago(j.first_seen)}
+        <div class="meta">${loc}${loc ? " · " : ""}${$("#sort").value === "found" ? "found " + ago(j.first_seen) : "posted " + ago(posted(j))}
           ${j.first_seen > day ? '<span class="badge new">NEW</span>' : ""}
           ${lead(j) ? `<span class="badge direct">${esc(lead(j))}</span>` : ""}
           <span class="badge">${j.track.toUpperCase()}</span><span class="badge">${esc(j.ats)}</span></div></div>
@@ -135,7 +140,7 @@ $("#list").addEventListener("click", e => {
   const b = e.target.closest("button[data-id]"); if (!b) return;
   const id = b.dataset.id; if (applied[id]) delete applied[id]; else applied[id] = Date.now(); save(); render();
 });
-["#q", "#when", "#src", "#mine"].forEach(s => $(s).addEventListener("input", render));
+["#q", "#when", "#src", "#mine", "#sort"].forEach(s => $(s).addEventListener("input", render));
 $("#track").addEventListener("click", e => { if (e.target.dataset.v === undefined) return; track = e.target.dataset.v;
   $("#track").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.v === track)); render(); });
 load();

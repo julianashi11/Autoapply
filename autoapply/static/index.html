@@ -146,6 +146,9 @@ button.cur{background:var(--sel);border-color:var(--accent);color:var(--accent);
         <option value="new">To do</option><option value="later">Later</option>
         <option value="applied">Applied</option><option value="skipped">Skipped</option><option value="">All</option>
       </select>
+      <select id="sort" title="Sort">
+        <option value="posted">Newest posted</option><option value="found">Recently found</option>
+      </select>
       <select id="source">
         <option value="">All sources</option><option value="direct">Company sites only</option><option value="early">Found before GitHub</option>
       </select>
@@ -261,7 +264,15 @@ function filtered(){
     (!st || j.status === st) &&
     (!src || (src === "direct" ? j.source === "direct" : early(j))) &&
     (!ats || (ats === "auto" ? AUTO.has(j.ats) : j.ats === ats || (ats==="other" && !["greenhouse","lever","ashby","workday"].includes(j.ats)))) &&
-    (!q || (j.company+" "+j.title+" "+j.locations.join(" ")).toLowerCase().includes(q)));
+    (!q || (j.company+" "+j.title+" "+j.locations.join(" ")).toLowerCase().includes(q)))
+    .sort(sortBy($("#sort").value));
+}
+// Posting date when the company gave one; otherwise when we first found it.
+function postedTs(j){ return j.date_posted || seenTs(j.first_seen) || 0; }
+function sortBy(mode){
+  return mode === "found"
+    ? (a, b) => (seenTs(b.first_seen) || 0) - (seenTs(a.first_seen) || 0) || postedTs(b) - postedTs(a)
+    : (a, b) => postedTs(b) - postedTs(a) || (seenTs(b.first_seen) || 0) - (seenTs(a.first_seen) || 0);
 }
 function renderList(){
   const jobs = filtered();
@@ -281,12 +292,12 @@ function renderList(){
     ].join("");
     return `<div class="job ${sel===j.id?"sel":""}" data-id="${j.id}">
       <div class="co">${esc(j.company)}</div><div class="ti">${esc(j.title)}</div>
-      <div class="meta">${loc} · found ${ago(seenTs(j.first_seen))} ${badges}</div></div>`;
+      <div class="meta">${loc} · ${$("#sort").value === "found" ? "found " + ago(seenTs(j.first_seen)) : "posted " + ago(postedTs(j))} ${badges}</div></div>`;
   }).join("") || `<div class="empty" style="margin-top:40px">No roles match these filters.</div>`;
   L.scrollTop = top;
 }
 $("#list").addEventListener("click", e => { const el = e.target.closest(".job"); if (el) openJob(el.dataset.id); });
-["#q","#status","#ats","#source"].forEach(s => $(s).addEventListener("input", renderList));
+["#q","#status","#ats","#source","#sort"].forEach(s => $(s).addEventListener("input", renderList));
 $("#trackSeg").addEventListener("click", e => {
   if (!e.target.dataset) return; track = e.target.dataset.v ?? track;
   $("#trackSeg").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.v === track)); renderList();
