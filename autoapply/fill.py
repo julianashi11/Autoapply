@@ -92,7 +92,13 @@ def build_rules(profile):
         (r"current (company|employer)|^\s*(organization|company)\s*\*?$", me.get("school")),
     ]
     rules += list((profile.get("answers") or {}).items())
-    return [(re.compile(rx, re.I), str(v)) for rx, v in rules if v not in (None, "")]
+    out = []
+    for rx, v in rules:
+        # An answer can list several wordings, best first, e.g. ["I am not a protected veteran", "No"].
+        values = [str(x) for x in v if x not in (None, "")] if isinstance(v, list) else ([str(v)] if v not in (None, "") else [])
+        if values:
+            out.append((re.compile(rx, re.I), values))
+    return out
 
 
 # Follow-ups and fields that should never be guessed.
@@ -109,19 +115,26 @@ def answer_for(label, rules):
     return None
 
 
-def pick_option(options, value):
-    """Index of the option text that best matches value, or None."""
-    v = value.strip().lower()
+def pick_option(options, values):
+    """Index of the option that best matches the answer, or None.
+
+    `values` is one answer or a list of wordings in order of preference."""
+    if isinstance(values, str):
+        values = [values]
     texts = [o.strip().lower() for o in options]
-    for test in (
-        lambda t: t == v,
-        lambda t: t.startswith(v),
-        lambda t: v in t,
-        lambda t: t and t in v,
-    ):
-        for i, t in enumerate(texts):
-            if t and t not in ("select...", "select", "--", "please select") and test(t):
-                return i
+    for value in values:
+        v = value.strip().lower()
+        # Short answers like "No" must match whole words ("No", "No, ...") not "not" or "none".
+        word = re.compile(rf"(^|\W){re.escape(v)}(\W|$)")
+        for test in (
+            lambda t: t == v,
+            lambda t: bool(word.match(t)),
+            lambda t: bool(word.search(t)) if len(v) <= 3 else v in t,
+            lambda t: len(t) > 3 and t in v,
+        ):
+            for i, t in enumerate(texts):
+                if t and t not in ("select...", "select", "--", "please select") and test(t):
+                    return i
     return None
 
 
@@ -186,7 +199,7 @@ def fill_frame(frame, rules, resume, report):
                 if value is None:
                     _note_unfilled(el, label, report)
                     continue
-                el.fill(value)
+                el.fill(value[0])
                 report["filled"].append(label)
         except Exception as e:
             report["errors"].append(f"{label}: {e}")
@@ -209,11 +222,16 @@ def fill_frame(frame, rules, resume, report):
             continue
         try:
             el.click()
-            el.fill(value)
-            frame.wait_for_timeout(700)
+            frame.wait_for_timeout(500)
             opts = frame.locator("[role=option]")
             texts = [opts.nth(j).inner_text() for j in range(opts.count())]
-            idx = pick_option(texts, value)
+            idx = pick_option(texts, value) if texts else None
+            if idx is None:
+                # Searchable lists (schools, cities) only show matches after typing.
+                el.fill(value[0])
+                frame.wait_for_timeout(700)
+                texts = [opts.nth(j).inner_text() for j in range(opts.count())]
+                idx = pick_option(texts, value)
             if idx is None and texts and re.search(r"location|city", label, re.I):
                 idx = 0
             if idx is None:

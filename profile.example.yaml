@@ -8,7 +8,8 @@ me:
   linkedin: ""             # https://linkedin.com/in/...
   github: ""               # https://github.com/...
   website: ""
-  location: "St. Louis, MO"
+  location: "St. Louis, MO"     # where you live now (school)
+  home_state: "Hawaii"           # permanent home
   school: "Washington University in St. Louis"
   degree: "Bachelor's"
   major: "Computer Science"
@@ -38,12 +39,15 @@ answers:
   "gpa": ""
   "how did you hear|where did you (hear|find)|source": "Online job board"
   "previously (worked|been employed|applied)|former employee": "No"
+  # "Are you local to X?": you'd relocate, so prefer an option like "No, but willing to relocate".
+  "local to|currently (live|reside|located) (in|near)|live within|within commuting distance|based in the": ["willing to relocate", "No"]
   "relocat": "Yes"
   "work (in.?person|on.?site)|hybrid|commute|in the office": "Yes"
+  "home state|state of (permanent )?residence|permanent (address|residence).*state|state.*permanent": "Hawaii"
   "currently enrolled": "Yes"
   "pronoun": ""
   # Voluntary EEO questions. Leave blank to answer them yourself, or set to "Decline to self-identify".
   "gender": ""
   "race|ethnicity|hispanic": ""
-  "veteran": ""
+  "veteran": ["I am not a protected veteran", "No"]
   "disability": ""
