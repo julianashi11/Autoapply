@@ -31,8 +31,14 @@ One-time setup, in the repo's Settings → Secrets and variables → Actions (or
 | Secret | Value |
 |---|---|
 | `EMAIL_TO` | where alerts go |
-| `SMTP_USER` | the Gmail address that sends them |
-| `SMTP_PASSWORD` | a Gmail App Password (Google Account → Security → 2-Step Verification → App passwords) |
+| `RESEND_API_KEY` | easiest: a free [Resend](https://resend.com) API key. Sign up with the `EMAIL_TO` address; its test sender can mail that address with no domain setup |
+
+Or send through a mailbox instead of Resend:
+
+| Secret | Value |
+|---|---|
+| `SMTP_USER` | a Gmail (or personal Outlook.com) address |
+| `SMTP_PASSWORD` | its App Password (Google: Account → Security → 2-Step Verification → App passwords) |
 
 The first run records what's already open; emails start with the next new posting.
 GitHub sometimes starts scheduled runs a few minutes late.

@@ -33,6 +33,7 @@ jobs:
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
         run: python -m autoapply.cloud
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
@@ -41,4 +42,4 @@ jobs:
       - id: deploy
         uses: actions/deploy-pages@v4
       - name: Fail the run if the email didn't send
-        run: test ! -f .email_failed || (echo "Email failed; check SMTP_USER / SMTP_PASSWORD secrets" && exit 1)
+        run: test ! -f .email_failed || (echo "Email failed; check the RESEND_API_KEY or SMTP_USER / SMTP_PASSWORD secrets" && exit 1)

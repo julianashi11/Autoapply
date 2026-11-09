@@ -12,6 +12,7 @@ optional SMTP_HOST / SMTP_PORT.
 import html
 import json
 import os
+import re
 import shutil
 import smtplib
 import sys
@@ -108,22 +109,46 @@ def email_html(new, site_url):
     return "".join(parts)
 
 
+def send_resend(key, to, subject, text, html_body):
+    """Sends through Resend (resend.com). Its test sender can mail the address you signed up with."""
+    body = json.dumps({
+        "from": os.environ.get("EMAIL_FROM") or "Autoapply <onboarding@resend.dev>",
+        "to": [a.strip() for a in to.split(",")], "subject": subject, "text": text, "html": html_body,
+    }).encode()
+    req = urllib.request.Request("https://api.resend.com/emails", data=body, headers={
+        "Authorization": f"Bearer {key}", "Content-Type": "application/json", "User-Agent": "autoapply-cloud"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        resp.read()
+
+
 def send_email(new, site_url):
     to, user, pw = os.environ.get("EMAIL_TO"), os.environ.get("SMTP_USER"), os.environ.get("SMTP_PASSWORD")
-    if not (to and user and pw):
-        print("Email not configured (EMAIL_TO / SMTP_USER / SMTP_PASSWORD); skipping.")
+    resend_key = os.environ.get("RESEND_API_KEY")
+    if not (to and (resend_key or (user and pw))):
+        print("Email not configured (EMAIL_TO plus RESEND_API_KEY or SMTP_USER / SMTP_PASSWORD); skipping.")
         return
     companies = list(dict.fromkeys(j["company"] for j in sorted(new, key=lambda j: j["source"] != "direct")))
     subject = (f"{len(new)} new internship{'s' if len(new) != 1 else ''}: "
                + ", ".join(companies[:3]) + (f" +{len(companies) - 3} more" if len(companies) > 3 else ""))
+    text = "\n".join(f"{j['company']} | {j['title']} | {j['url']}" for j in new)
+    if resend_key:
+        send_resend(resend_key, to, subject, text, email_html(new, site_url))
+        print(f"Emailed {len(new)} new roles to {to} via Resend.")
+        return
     msg = MIMEMultipart("alternative")
     msg["Subject"], msg["From"], msg["To"] = subject, f"Autoapply <{user}>", to
     text = "\n".join(f"{j['company']} | {j['title']} | {j['url']}" for j in new)
     msg.attach(MIMEText(text, "plain"))
     msg.attach(MIMEText(email_html(new, site_url), "html"))
-    host = os.environ.get("SMTP_HOST") or "smtp.gmail.com"
-    port = int(os.environ.get("SMTP_PORT") or 465)
-    with smtplib.SMTP_SSL(host, port, timeout=30) as s:
+    host = os.environ.get("SMTP_HOST") or ("smtp.gmail.com" if user.endswith("@gmail.com") else "smtp-mail.outlook.com"
+                                            if re.search(r"@(outlook|hotmail|live)\.com$", user) else "smtp.gmail.com")
+    port = int(os.environ.get("SMTP_PORT") or (465 if "gmail" in host else 587))
+    if port == 465:
+        server = smtplib.SMTP_SSL(host, port, timeout=30)
+    else:
+        server = smtplib.SMTP(host, port, timeout=30)
+        server.starttls()
+    with server as s:
         s.login(user, pw)
         s.sendmail(user, [a.strip() for a in to.split(",")], msg.as_string())
     print(f"Emailed {len(new)} new roles to {to}.")
