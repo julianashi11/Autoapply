@@ -329,7 +329,8 @@ function renderDetail(){
   } else {
     tailorHtml = `
       <div class="row"><a class="note" href="/api/job/${d.id}/resume.pdf" target="_blank">Open PDF</a>
-        ${d.pages>1?`<span class="badge lo">${d.pages} pages; trim it to 1</span>`:""}
+        ${d.pages>1?`<span class="badge lo">${d.pages} pages: remove a bullet in the editor</span>`:d.pages===1?`<span class="badge hi">1 page</span>`:""}
+        ${d.fit&&d.fit.length?`<span class="note">To fit: ${esc(d.fit.join(", "))}</span>`:""}
         <span class="spacer"></span>
         <button id="retailorBtn" ${!S.can_tailor?"disabled":""}>${busy.tailor?'<span class="spin"></span> Tailoring…':"Tailor again"}</button>
         <button id="discardBtn">Discard</button></div>
@@ -377,8 +378,10 @@ function editorHtml(t){
         <input data-k="role" value="${esc(e.role)}" placeholder="Role">
         <input data-k="location" value="${esc(e.location)}" placeholder="Location">
         <input data-k="dates" value="${esc(e.dates)}" placeholder="Dates"></div>
+        <input data-k="subtitle" value="${esc(e.subtitle||"")}" placeholder="Second line in italics, e.g. degree | GPA (optional)" style="margin-bottom:6px">
         <textarea data-k="bullets" rows="${Math.max(2,e.bullets.length+1)}" placeholder="One bullet per line">${esc(e.bullets.join("\n"))}</textarea></div>`).join("")}
-      ${s.lines.length||!s.entries.length?`<textarea data-k="lines" rows="${Math.max(2,s.lines.length+1)}" placeholder="One line each, e.g. Languages: Python, Java">${esc(s.lines.join("\n"))}</textarea>`:""}
+      ${s.lines.length||!s.entries.length?`<div class="label">Lines</div><textarea data-k="lines" rows="${Math.max(2,s.lines.length+1)}" placeholder="One per line, e.g. Languages: Python, Java">${esc(s.lines.join("\n"))}</textarea>`:""}
+      ${(s.bullets||[]).length||!s.entries.length?`<div class="label">Bullets</div><textarea data-k="sbullets" rows="${Math.max(2,(s.bullets||[]).length+1)}" placeholder="One bullet per line">${esc((s.bullets||[]).join("\n"))}</textarea>`:""}
     </div>`).join("")}</div>`;
 }
 function readEditor(){
@@ -391,10 +394,11 @@ function readEditor(){
     s.title = secEl.querySelector("[data-k=title]").value.trim();
     secEl.querySelectorAll(".entry").forEach(enEl => {
       const e = s.entries[+enEl.dataset.ei];
-      ["organization","role","location","dates"].forEach(k => e[k] = enEl.querySelector(`[data-k=${k}]`).value.trim());
+      ["organization","role","location","dates","subtitle"].forEach(k => e[k] = enEl.querySelector(`[data-k=${k}]`).value.trim());
       e.bullets = lines(enEl.querySelector("[data-k=bullets]").value);
     });
     const l = secEl.querySelector(":scope > [data-k=lines]"); if (l) s.lines = lines(l.value);
+    const b = secEl.querySelector(":scope > [data-k=sbullets]"); if (b) s.bullets = lines(b.value);
   });
   return t;
 }

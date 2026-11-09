@@ -69,16 +69,21 @@ def autofill(w, job, profile, resume):
     return report
 
 
-def render_pdf(w, html, out_path):
+def render_pdf(w, html, out_path, steps):
+    """Renders the resume, shrinking spacing/margins/font step by step until it fits one page."""
+    from .tailor import FIT_JS
+
     page = w._bg().new_page()
     try:
-        page.set_content(html, wait_until="load")
+        page.set_content(html, wait_until="networkidle", timeout=30000)
+        fit = page.evaluate(FIT_JS, [list(s) for s in steps])
         page.pdf(path=str(out_path), format="Letter", print_background=True,
-                 prefer_css_page_size=True)
+                 prefer_css_page_size=True, margin={"top": "0", "bottom": "0", "left": "0", "right": "0"})
     finally:
         page.close()
     from pypdf import PdfReader
-    return len(PdfReader(str(out_path)).pages)
+    fit["pages"] = len(PdfReader(str(out_path)).pages)
+    return fit
 
 
 def page_text(w, url):

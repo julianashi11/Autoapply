@@ -109,8 +109,8 @@ def resume_as_text(r):
     for s in r["sections"]:
         parts.append(s["title"])
         for e in s.get("entries") or []:
-            parts += [e["organization"], e["role"], *e["bullets"]]
-        parts += s.get("lines") or []
+            parts += [e.get("organization", ""), e.get("role", ""), e.get("subtitle", ""), *e.get("bullets", [])]
+        parts += (s.get("lines") or []) + (s.get("bullets") or [])
     return "\n".join(parts)
 
 
@@ -147,6 +147,8 @@ def job_detail(conn, job_id):
         if fields:
             db.update(conn, row["id"], **fields)
     out["has_pdf"] = tailored_path(row) is not None
+    if out["has_pdf"]:
+        out["pages"] = tailor.pdf_pages(tailored_path(row))
     return out
 
 
@@ -171,12 +173,32 @@ def ensure_jd(conn, row):
     return text
 
 
+def base_style(row):
+    path = resolve_resume(load_profile(), row["track"], ROOT)
+    return tailor.detect_style(path) if path else tailor.default_style()
+
+
 def render_and_save(conn, row, resume):
+    """Writes the tailored PDF in the original resume's style. Returns the fit result."""
     TAILORED_DIR.mkdir(parents=True, exist_ok=True)
     out = TAILORED_DIR / tailor.pdf_name(load_profile(), row)
-    pages = worker.submit(browser.render_pdf, tailor.render_html(resume), out).result(timeout=60)
+    style = base_style(row)
+    fit = worker.submit(browser.render_pdf, tailor.render_html(resume, style), out,
+                        tailor.fit_steps(style)).result(timeout=90)
     db.update(conn, row["id"], tailored=json.dumps(resume), tailored_pdf=str(out))
-    return pages
+    return fit
+
+
+def fit_note(fit, style):
+    """Plain-English summary of what was adjusted to fit one page."""
+    notes = []
+    if fit["fs"] < style["body"]:
+        notes.append(f"font {style['body']}pt to {fit['fs']}pt")
+    if fit["mt"] < style["margin_top"] or fit["ms"] < style["margin_side"]:
+        notes.append("smaller margins")
+    if fit["lh"] < style["lh"]:
+        notes.append("tighter line spacing")
+    return notes
 
 
 # ---------- HTTP ----------
@@ -294,17 +316,27 @@ class Handler(BaseHTTPRequestHandler):
             key = api_key()
             text = ensure_jd(conn, row)
             profile = load_profile()
-            resume = tailor.tailor(key, base_resume_text(profile, row["track"]), dict(row), text)
-            pages = render_and_save(conn, get_job(conn, job_id), resume)
+            base = base_resume_text(profile, row["track"])
+            resume = tailor.tailor(key, base, dict(row), text)
+            fit = render_and_save(conn, get_job(conn, job_id), resume)
+            if not fit["fits"]:
+                # Still too long at the smallest allowed size: ask for a shorter version once.
+                style = base_style(row)
+                lines = max(2, round(fit["overflow"] / (fit["fs"] * 96 / 72 * fit["lh"])) + 1)
+                resume = tailor.tailor(key, base, dict(row), text, feedback=(
+                    f"Your previous version ran about {lines} lines past one page. Cut at least "
+                    f"{lines} lines: drop the least relevant bullets or entries and shorten "
+                    f"bullets that wrap onto a second line by only a few words."))
+                fit = render_and_save(conn, get_job(conn, job_id), resume)
             out = job_detail(conn, job_id)
-            out["pages"] = pages
+            out["pages"], out["fit"] = fit["pages"], fit_note(fit, base_style(row))
             return self._send(200, out)
 
         if method == "POST" and action == "resume":
             resume = self._body()["resume"]
-            pages = render_and_save(conn, row, resume)
+            fit = render_and_save(conn, row, resume)
             out = job_detail(conn, job_id)
-            out["pages"] = pages
+            out["pages"], out["fit"] = fit["pages"], fit_note(fit, base_style(row))
             return self._send(200, out)
 
         if method == "POST" and action == "discard":
