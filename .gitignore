@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+data/
+profile.yaml
+resumes/
+applications.csv
+.DS_Store

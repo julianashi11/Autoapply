@@ -1,0 +1,4 @@
+#!/bin/sh
+# Runs the autoapply CLI with the project's virtualenv.
+DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$DIR" && exec "$DIR/.venv/bin/python" -m autoapply.cli "$@"

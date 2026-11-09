@@ -1,0 +1,58 @@
+# Copy this file to profile.yaml and fill it in. profile.yaml is gitignored.
+
+me:
+  first_name: ""
+  last_name: ""
+  email: ""
+  phone: ""
+  linkedin: ""             # https://linkedin.com/in/...
+  github: ""               # https://github.com/...
+  website: ""
+  location: "St. Louis, MO"
+  school: "Washington University in St. Louis"
+  degree: "Bachelor's"
+  major: "Computer Science"
+  graduation: "May 2028"
+  gpa: ""
+
+# Absolute or project-relative paths. Use a different resume per role type if you like.
+resume:
+  swe: "resumes/resume_swe.pdf"
+  pm: "resumes/resume_pm.pdf"
+
+# Which listings to pull from the feed.
+search:
+  term: "Summer 2027"
+  categories:
+    swe: ["Software", "Software Engineering"]
+    pm: ["Product", "Product Management"]
+    # Uncomment to include ML/data roles under the SWE resume:
+    # swe: ["Software", "Software Engineering", "AI/ML/Data"]
+  needs_sponsorship: false         # true = hide roles that don't sponsor / require citizenship
+  exclude_title_regex: "new grad|senior|staff|principal|phd|full[- ]time|\\bmba\\b"
+  exclude_companies: []            # e.g. ["Company A", "Company B"]
+  locations_regex: ""              # e.g. "NY|New York|SF|San Francisco|Remote"; empty = anywhere
+
+# Answers for common application questions. Each key is a regex matched against the
+# question's label (case-insensitive); the first match wins. The tool fills text boxes,
+# dropdowns and radio buttons with these values. Review everything before you submit.
+answers:
+  "legally authorized|authorized to work|eligible to work": "Yes"
+  "sponsorship|visa|petition|immigration status": "No"
+  "18 years|at least 18": "Yes"
+  "graduat(e|ion).*(date|year|when)|expected graduation": "May 2028"
+  "school|university|college|institution|attend": "Washington University in St. Louis"
+  "degree": "Bachelor's"
+  "major|field of study|discipline": "Computer Science"
+  "gpa": ""
+  "how did you hear|where did you (hear|find)|source": "Online job board"
+  "previously (worked|been employed|applied)|former employee": "No"
+  "relocat": "Yes"
+  "work (in.?person|on.?site)|hybrid|commute|in the office": "Yes"
+  "currently enrolled": "Yes"
+  "pronoun": ""
+  # Voluntary EEO questions. Leave blank to answer them yourself, or set to "Decline to self-identify".
+  "gender": ""
+  "race|ethnicity|hispanic": ""
+  "veteran": ""
+  "disability": ""
