@@ -77,7 +77,7 @@ def merge(jobs, prev):
 
 
 def public_job(j):
-    keys = ("id", "company", "title", "url", "locations", "track", "ats", "sponsorship",
+    keys = ("id", "canon", "company", "title", "url", "locations", "track", "ats", "sponsorship",
             "date_posted", "source", "found_by", "first_seen", "lead_hours")
     return {k: j.get(k) for k in keys}
 

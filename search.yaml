@@ -17,3 +17,8 @@ direct_posted_after: "2026-06-01"  # company-site scan: ignore undated postings 
 #   greenhouse:<board>  lever:<company>  ashby:<company>  smartrecruiters:<company>
 #   workday:<host>/<site>   e.g. workday:nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite
 extra_boards: []
+
+# The live page published by the cloud scanner. The local app copies its results every
+# 2 minutes instead of scanning on its own (it scans locally only if this is unreachable
+# or out of date).
+site_url: "https://julianashi11.github.io/Autoapply"

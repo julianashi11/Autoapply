@@ -71,15 +71,19 @@ def connect():
 
 
 def upsert(conn, job):
-    """Insert a new job or refresh its listing fields. Never touches status."""
+    """Insert a new job or refresh its listing fields. Never touches status.
+
+    `first_seen` / `found_by` / `feed_seen` may be given (e.g. from the cloud scanner);
+    otherwise they're set from this sighting. The earliest first_seen always wins."""
     conn.execute(
         """
         INSERT INTO jobs (id, company, title, url, locations, category, track, ats,
                           sponsorship, date_posted, active, first_seen, canon, source,
                           found_by, feed_seen, last_seen)
         VALUES (:id, :company, :title, :url, :locations, :category, :track, :ats,
-                :sponsorship, :date_posted, 1, datetime('now','localtime'), :canon, :source,
-                :source, CASE WHEN :source != 'direct' THEN datetime('now','localtime') END,
+                :sponsorship, :date_posted, 1, COALESCE(:first_seen, datetime('now','localtime')),
+                :canon, :source, COALESCE(:found_by, :source),
+                COALESCE(:feed_seen, CASE WHEN :source != 'direct' THEN datetime('now','localtime') END),
                 datetime('now','localtime'))
         ON CONFLICT(id) DO UPDATE SET
             company=excluded.company, title=excluded.title, url=excluded.url,
@@ -88,11 +92,13 @@ def upsert(conn, job):
             sponsorship=COALESCE(excluded.sponsorship, jobs.sponsorship),
             date_posted=COALESCE(MIN(jobs.date_posted, excluded.date_posted), excluded.date_posted, jobs.date_posted),
             canon=COALESCE(excluded.canon, jobs.canon), source=excluded.source,
-            feed_seen=COALESCE(jobs.feed_seen, CASE WHEN excluded.source != 'direct'
-                               THEN datetime('now','localtime') END),
+            first_seen=MIN(jobs.first_seen, excluded.first_seen),
+            found_by=CASE WHEN excluded.first_seen < jobs.first_seen THEN excluded.found_by ELSE jobs.found_by END,
+            feed_seen=COALESCE(MIN(jobs.feed_seen, excluded.feed_seen), jobs.feed_seen, excluded.feed_seen),
             last_seen=datetime('now','localtime'), active=1
         """,
-        {"canon": None, "source": "simplify", **job, "locations": json.dumps(job["locations"])},
+        {"canon": None, "source": "simplify", "first_seen": None, "found_by": None, "feed_seen": None,
+         **job, "locations": json.dumps(job["locations"])},
     )
 
 
@@ -114,8 +120,11 @@ def update(conn, job_id, **fields):
         conn.commit()
 
 
-def sync(conn, jobs):
-    """Record this scan's postings. Returns the ids that are new."""
+def sync(conn, jobs, complete=False):
+    """Record a scan's postings. Returns the ids that are new.
+
+    complete=True means `jobs` is the full list of open roles (the cloud scanner's), so
+    anything missing from it is closed right away; otherwise roles close after STALE_AFTER."""
     with _lock:
         before = {r["id"] for r in conn.execute("SELECT id FROM jobs")}
         # Keep each posting's existing row (and status) whichever source finds it.
@@ -124,6 +133,12 @@ def sync(conn, jobs):
             if job.get("canon") in by_canon:
                 job["id"] = by_canon[job["canon"]]
             upsert(conn, job)
-        conn.execute(f"UPDATE jobs SET active=0 WHERE last_seen IS NULL OR last_seen < datetime('now','localtime','{STALE_AFTER}')")
+        if complete:
+            conn.execute("CREATE TEMP TABLE IF NOT EXISTS open_ids (id TEXT PRIMARY KEY)")
+            conn.execute("DELETE FROM open_ids")
+            conn.executemany("INSERT OR IGNORE INTO open_ids VALUES (?)", [(j["id"],) for j in jobs])
+            conn.execute("UPDATE jobs SET active=0 WHERE active=1 AND id NOT IN (SELECT id FROM open_ids)")
+        else:
+            conn.execute(f"UPDATE jobs SET active=0 WHERE last_seen IS NULL OR last_seen < datetime('now','localtime','{STALE_AFTER}')")
         conn.commit()
     return [j["id"] for j in jobs if j["id"] not in before]

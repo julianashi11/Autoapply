@@ -6,6 +6,7 @@ import re
 import threading
 import time
 import traceback
+import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -21,10 +22,14 @@ ROOT = Path(__file__).resolve().parent.parent
 STATIC = Path(__file__).resolve().parent / "static"
 SETTINGS = ROOT / "data" / "settings.json"
 TAILORED_DIR = ROOT / "data" / "tailored"
-REFRESH_EVERY = 20 * 60  # seconds between scans
+CLOUD_EVERY = 2 * 60        # seconds between checks of the cloud scanner's results
+CLOUD_STALE = 45 * 60       # cloud data older than this -> scan locally instead
+LOCAL_EVERY = 20 * 60       # seconds between local scans when the cloud is unavailable
+REFRESH_EVERY = CLOUD_EVERY
 
 state = {"last_fetch": None, "fetching": False, "fetch_error": None, "new_ids": [],
-         "progress": None, "info": None}
+         "progress": None, "info": None, "mode": None, "cloud_updated": None,
+         "last_local": 0, "etag": None}
 worker = None
 
 
@@ -52,22 +57,74 @@ def load_profile():
         return yaml.safe_load(f)
 
 
-# ---------- feed refresh ----------
+# ---------- keeping postings up to date ----------
 
-def refresh():
+def _local_time(ts):
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts else None
+
+
+def pull_cloud():
+    """Copies the cloud scanner's latest results into the local database.
+
+    Returns True if the data was fresh enough to use, False if it's stale."""
+    from .direct import canon as canon_of
+
+    site = (load_search(load_profile()).get("site_url") or "").rstrip("/")
+    if not site:
+        return False
+    req = urllib.request.Request(f"{site}/jobs.json?t={int(time.time())}",
+                                 headers={"User-Agent": "autoapply-local", "Cache-Control": "no-cache"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        data = json.load(resp)
+    state["cloud_updated"] = data.get("updated")
+    if time.time() - (data.get("updated") or 0) > CLOUD_STALE:
+        return False
+    jobs = []
+    for j in data.get("jobs", []):
+        first = j.get("first_seen")
+        lead = j.get("lead_hours")
+        jobs.append({
+            "id": j["id"], "canon": j.get("canon") or canon_of(j["url"]),
+            "company": j["company"], "title": j["title"], "url": j["url"],
+            "locations": j.get("locations") or [], "category": "cloud", "track": j["track"],
+            "ats": j["ats"], "sponsorship": j.get("sponsorship"), "date_posted": j.get("date_posted"),
+            "source": j.get("source") or "simplify", "found_by": j.get("found_by"),
+            "first_seen": _local_time(first),
+            "feed_seen": _local_time(first + lead * 3600) if first and lead is not None else None,
+        })
+    conn = db.connect()
+    new = db.sync(conn, jobs, complete=True)
+    conn.close()
+    state["new_ids"] = new
+    state["info"] = data.get("info")
+    state["last_fetch"] = time.time()
+    state["mode"] = "cloud"
+    return True
+
+
+def scan_locally():
+    def progress(done, total):
+        state["progress"] = [done, total]
+    jobs, info = feed.collect(load_search(load_profile()), progress=progress)
+    conn = db.connect()
+    new = db.sync(conn, jobs)
+    conn.close()
+    state.update(info=info, new_ids=new, last_fetch=time.time(), mode="local", last_local=time.time())
+
+
+def refresh(force_local=False):
     if state["fetching"]:
         return
     state["fetching"] = True
     try:
-        def progress(done, total):
-            state["progress"] = [done, total]
-        jobs, info = feed.collect(load_search(load_profile()), progress=progress)
-        conn = db.connect()
-        new = db.sync(conn, jobs)
-        conn.close()
-        state["info"] = info
-        state["new_ids"] = new
-        state["last_fetch"] = time.time()
+        used_cloud = False
+        if not force_local:
+            try:
+                used_cloud = pull_cloud()
+            except Exception as e:
+                state["fetch_error"] = f"cloud: {e}"
+        if not used_cloud and (force_local or time.time() - state["last_local"] > LOCAL_EVERY):
+            scan_locally()
         state["fetch_error"] = None
     except Exception as e:
         state["fetch_error"] = str(e)
@@ -76,10 +133,25 @@ def refresh():
         state["progress"] = None
 
 
+def request_cloud_scan():
+    """Asks GitHub to run the cloud scanner now (needs the gh CLI, logged in)."""
+    import shutil
+    import subprocess
+
+    site = load_search(load_profile()).get("site_url") or ""
+    m = re.match(r"https://([\w-]+)\.github\.io/([\w.-]+)", site)
+    gh = shutil.which("gh") or next((p for p in ("/opt/homebrew/bin/gh", "/usr/local/bin/gh") if Path(p).exists()), None)
+    if not (m and gh):
+        return False
+    r = subprocess.run([gh, "workflow", "run", "scan.yml", "-R", f"{m.group(1)}/{m.group(2)}"],
+                       capture_output=True, text=True, timeout=30)
+    return r.returncode == 0
+
+
 def refresher():
     while True:
         refresh()
-        time.sleep(REFRESH_EVERY)
+        time.sleep(CLOUD_EVERY)
 
 
 # ---------- job helpers ----------
@@ -236,8 +308,14 @@ class Handler(BaseHTTPRequestHandler):
             if method == "GET" and path == "/api/state":
                 return self._send(200, self.api_state(conn))
             if method == "POST" and path == "/api/refresh":
+                body = self._body()
+                if body.get("local"):
+                    threading.Thread(target=refresh, kwargs={"force_local": True}, daemon=True).start()
+                    return self._send(200, {"ok": True, "message": "Scanning company boards from this computer (about 6 minutes)."})
+                started = request_cloud_scan()
                 threading.Thread(target=refresh, daemon=True).start()
-                return self._send(200, {"ok": True})
+                return self._send(200, {"ok": True, "message": "Cloud scan started; new roles show up here in about 8 minutes."
+                                        if started else "Checked for the latest results."})
             if path == "/api/settings":
                 if method == "POST":
                     s = load_settings()
@@ -273,7 +351,7 @@ class Handler(BaseHTTPRequestHandler):
             "status, status_at, first_seen, score, screen, tailored_pdf IS NOT NULL AS tailored, "
             "source, found_by, feed_seen, "
             "CAST((julianday(feed_seen) - julianday(first_seen)) * 24 AS REAL) AS lead_hours "
-            "FROM jobs WHERE active=1 OR status='applied' ORDER BY date_posted DESC"
+            "FROM jobs WHERE active=1 OR status='applied' ORDER BY first_seen DESC, date_posted DESC"
         ).fetchall()
         jobs = []
         for r in rows:
@@ -292,6 +370,8 @@ class Handler(BaseHTTPRequestHandler):
             "can_tailor": bool(api_key() or tailor.claude_cli()),
             "tailor_via": "cli" if tailor.claude_cli() else "key" if api_key() else None,
             "refresh_every": REFRESH_EVERY,
+            "mode": state["mode"],
+            "cloud_updated": state["cloud_updated"],
         }
 
     def api_job(self, conn, method, job_id, action, is_pdf):

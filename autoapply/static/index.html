@@ -188,6 +188,7 @@ async function api(path, body){
   return j;
 }
 function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),2600); }
+function seenTs(s){ return s ? new Date(s.replace(" ", "T")).getTime()/1000 : null; }
 function ago(ts){ if(!ts) return ""; const d=(Date.now()/1000-ts); if(d<3600) return Math.max(1,Math.round(d/60))+"m ago"; if(d<86400) return Math.round(d/3600)+"h ago"; return Math.round(d/86400)+"d ago"; }
 // Found on the company's own site before (or without) the GitHub list having it.
 function early(j){ return j.found_by === "direct"; }
@@ -225,7 +226,9 @@ function renderHeader(){
     dot.className="dot";
     const next = Math.max(0, Math.round((S.last_fetch + S.refresh_every - Date.now()/1000)/60));
     const boards = S.info ? ` · ${S.info.boards.toLocaleString()} company boards` : "";
-    $("#liveText").textContent = `Live${boards} · updated ${ago(S.last_fetch)} · next scan in ${next}m`;
+    $("#liveText").textContent = S.mode === "cloud"
+      ? `Live · synced with cloud scanner (scanned ${ago(S.cloud_updated)})${boards} · checks every 2m`
+      : `Live (scanning from this computer)${boards} · updated ${ago(S.last_fetch)}`;
   }
   const c = {new:0, applied:0, later:0};
   S.jobs.forEach(j => { if (c[j.status] !== undefined) c[j.status]++; });
@@ -260,7 +263,7 @@ function renderList(){
     ].join("");
     return `<div class="job ${sel===j.id?"sel":""}" data-id="${j.id}">
       <div class="co">${esc(j.company)}</div><div class="ti">${esc(j.title)}</div>
-      <div class="meta">${loc} · ${ago(j.date_posted)} ${badges}</div></div>`;
+      <div class="meta">${loc} · found ${ago(seenTs(j.first_seen))} ${badges}</div></div>`;
   }).join("") || `<div class="empty" style="margin-top:40px">No roles match these filters.</div>`;
   L.scrollTop = top;
 }
@@ -270,7 +273,7 @@ $("#trackSeg").addEventListener("click", e => {
   if (!e.target.dataset) return; track = e.target.dataset.v ?? track;
   $("#trackSeg").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.v === track)); renderList();
 });
-$("#refreshBtn").onclick = async () => { await api("/api/refresh", {}); toast("Checking for new postings…"); setTimeout(poll, 800); };
+$("#refreshBtn").onclick = async () => { const r = await api("/api/refresh", {}); toast(r.message || "Checking for new postings…"); setTimeout(poll, 1500); };
 
 // ---------- job detail ----------
 async function openJob(id){

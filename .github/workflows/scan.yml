@@ -2,7 +2,9 @@ name: Scan for internships
 
 on:
   schedule:
-    - cron: "*/10 * * * *"   # GitHub may start scheduled runs a few minutes late
+    # Backup only: each run queues the next one (see the last step), because GitHub often
+    # delays or skips frequent schedules.
+    - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
       test_email:
@@ -14,6 +16,7 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  actions: write   # to queue the next scan
 
 concurrency:
   group: scan
@@ -27,6 +30,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
+      - run: echo "STARTED=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
@@ -53,3 +57,20 @@ jobs:
       - name: Fail the run if the email didn't send
         if: ${{ !inputs.test_email }}
         run: test ! -f .email_failed || (echo "Email failed; check the RESEND_API_KEY or SMTP_USER / SMTP_PASSWORD secrets" && exit 1)
+      - name: Queue the next scan (about 10 minutes after this one started)
+        if: ${{ always() && !inputs.test_email }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          wait=$(( 600 - ($(date +%s) - STARTED) ))
+          if [ "$wait" -gt 0 ]; then sleep "$wait"; fi
+          # Don't start a second chain if a scan is already waiting or running.
+          others=$(gh run list -R "$GITHUB_REPOSITORY" --workflow scan.yml --limit 10 \
+                    --json databaseId,status --jq "[.[] | select(.databaseId != $GITHUB_RUN_ID)
+                    | select(.status == \"queued\" or .status == \"in_progress\" or .status == \"pending\" or .status == \"waiting\")] | length")
+          if [ "$others" = "0" ]; then
+            gh workflow run scan.yml -R "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME"
+            echo "Queued the next scan."
+          else
+            echo "A scan is already queued; not starting another."
+          fi
