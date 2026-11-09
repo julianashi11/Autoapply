@@ -205,14 +205,14 @@ def job_detail(conn, job_id):
         try:
             base_path = resolve_resume(profile, row["track"], ROOT)
             base = base_resume_text(profile, row["track"])
-            out["match"] = keywords.match(row["jd"], base)
+            out["match"] = keywords.match(row["jd"], base, row["company"])
             out["screen"] = screening.estimate(row["jd"], base, profile, out, pages=tailor.pdf_pages(base_path))
         except Exception as e:
             out["match_error"] = str(e)
         if out["tailored"]:
             text = resume_as_text(out["tailored"])
             pdf = tailored_path(row)
-            out["tailored_match"] = keywords.match(row["jd"], text)
+            out["tailored_match"] = keywords.match(row["jd"], text, row["company"])
             out["tailored_screen"] = screening.estimate(row["jd"], text, profile, out,
                                                         pages=tailor.pdf_pages(pdf) if pdf else 1)
         best = out["tailored_screen"] or out["screen"]
@@ -243,7 +243,7 @@ def ensure_jd(conn, row):
     profile = load_profile()
     score = None
     try:
-        score = keywords.match(text, base_resume_text(profile, row["track"]))["score"]
+        score = keywords.match(text, base_resume_text(profile, row["track"]), row["company"])["score"]
     except Exception:
         pass
     db.update(conn, row["id"], jd=text, score=score)

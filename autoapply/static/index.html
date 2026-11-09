@@ -438,9 +438,15 @@ function renderDetail(){
 
   let tailorHtml;
   if (!t){
+    const adding = m ? m.missing.filter(hasSkill) : [];
+    const skillsBlock = m && (m.matched.length || m.missing.length) ? `
+      <div class="label">Skills this posting asks for</div>
+      <p class="note" style="margin:2px 0 6px">✓ means it's already on your resume. Click <b>+</b> on any you have but haven't listed, and they'll be added when you tailor.</p>
+      <div class="chips">${m.matched.map(k => `<span class="chip ok">✓ ${esc(k)}</span>`).join("")}${m.missing.map(k => skillChip(k)).join("")}</div>` : "";
     tailorHtml = `<p class="note">Claude rewrites your ${d.track==="pm"?"PM":"SWE"} resume for this posting: it puts the most relevant experience first, uses the posting's wording where it truthfully fits, and trims to one page.
-      It only uses what's already on your resume.</p>
-      <div class="row"><button class="primary" id="tailorBtn" ${!S.can_tailor||!d.jd?"disabled":""}>${busy.tailor?'<span class="spin"></span> Tailoring… (about a minute)':"Tailor resume"}</button>
+      It only uses what's already on your resume, plus skills you confirm here.</p>
+      ${skillsBlock}
+      <div class="row" style="margin-top:12px"><button class="primary" id="tailorBtn" ${!S.can_tailor||!d.jd?"disabled":""}>${busy.tailor?'<span class="spin"></span> Tailoring… (about a minute)':adding.length?`Tailor resume + add ${adding.length} skill${adding.length===1?"":"s"}`:"Tailor resume"}</button>
       ${!S.can_tailor?`<span class="note">Install Claude Code, or add an API key in <a href="#" id="openSettings">Settings</a>.</span>`:`<span class="note">Uses ${S.tailor_via==="cli"?"your Claude Code login (no API key)":"your API key"}.</span>`}</div>`;
   } else {
     tailorHtml = `

@@ -139,7 +139,8 @@ def check_timing(posted):
 def estimate(jd, resume_text, profile, job, pages=None):
     """Returns {score, level, factors:[{status, text}], keywords:{...}}."""
     required, preferred = split_requirements(jd)
-    hard = lambda ks: set(ks) - keywords.SOFT
+    co = (job.get("company") or "").lower()
+    hard = lambda ks: {k for k in set(ks) - keywords.SOFT if not co or k.lower() not in co}
     want_all = hard(keywords.found(jd))
     want_req = hard(keywords.found(required))
     if len(want_req) < 3:  # couldn't find a usable requirements section
