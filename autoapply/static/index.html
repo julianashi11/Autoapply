@@ -282,15 +282,25 @@ function scoreClass(s){ return s>=55?"hi":s>=35?"mid":"lo"; }
 function screenLabel(s){ return (s<35?"Unlikely":s<55?"Possible":s<75?"Likely":"Strong") + " to pass"; }
 const ICON = {good:"✓", warn:"!", bad:"✕", neutral:"·"};
 function hasSkill(k){ return (S.my_skills || []).some(x => x.toLowerCase() === k.toLowerCase()); }
-function skillChip(k){
+function skillChip(k, full){
   const have = hasSkill(k);
-  return `<button class="chip ${have ? "have" : "no"}" data-skill="${esc(k)}" title="${have ? "You have this. Click to undo" : "Click if you have this skill"}">${have ? "✓ " : "+ "}${esc(k)}</button>`;
+  const tip = (full && full !== k ? full + " · " : "") + (have ? "You have this. Click to undo" : "Click if you have this skill");
+  return `<button class="chip ${have ? "have" : "no"}" data-skill="${esc(k)}" title="${esc(tip)}">${have ? "✓ " : "+ "}${esc(k)}</button>`;
+}
+// Eligibility items (citizenship, GPA...) aren't skills you can add to a resume.
+const NOT_A_SKILL = /citizen|clearance|\bitar\b|u\.?s\.? person|authoriz|sponsor|\bgpa\b|graduat|degree|enrolled|years? of|relocat|availab|on-?site|in person/i;
+// "Infrastructure-as-code tools (e.g., Terraform, Bicep)" -> "Infrastructure-as-code tools"
+function skillName(item){ return item.replace(/\s*[\(\[].*$/, "").replace(/\s*(e\.g\.|such as|like)\b.*$/i, "").replace(/[.;:,]+$/, "").trim().slice(0, 48); }
+// Every missing skill shown for this role: keyword gaps plus what Claude flagged.
+function missingSkills(d){
+  const names = [...(d.match?.missing || []), ...((d.tailored?.not_shown) || []).filter(x => !NOT_A_SKILL.test(x)).map(skillName)];
+  const seen = new Set(); return names.filter(n => n && !seen.has(n.toLowerCase()) && seen.add(n.toLowerCase()));
 }
 // Confirmed skills this tailored resume doesn't include yet.
 function pendingSkills(d){
   if (!d.tailored) return [];
   const text = JSON.stringify(d.tailored.sections).toLowerCase();
-  return (S.my_skills || []).filter(k => (d.match?.missing || []).some(m => m.toLowerCase() === k.toLowerCase()) && !text.includes(k.toLowerCase()));
+  return (S.my_skills || []).filter(k => missingSkills(d).some(m => m.toLowerCase() === k.toLowerCase()) && !text.includes(k.toLowerCase()));
 }
 function screenHtml(sc, label){
   return `<div class="screen ${scoreClass(sc.score)}"><div class="lvl">${sc.level}</div><div class="bar"><span style="width:${sc.score}%"></span></div><div class="note">${label} · ${sc.score}/100</div></div>`;
@@ -444,8 +454,9 @@ function renderDetail(){
         <button class="primary" id="retailorBtn2">Tailor again to add ${pendingSkills(d).length === 1 ? "it" : "them"}</button></div>` : ""}
       ${t.changes?.length?`<div class="label">What changed</div><ul class="plain">${t.changes.map(c=>`<li>${esc(c)}</li>`).join("")}</ul>`:""}
       ${t.not_shown?.length?`<div class="label">Posting wants, resume doesn't show</div>
-        <p class="note">Add these in the editor only if you really have the experience. Recruiters ask about everything on your resume.</p>
-        <div class="chips">${t.not_shown.map(k=>`<span class="chip no">${esc(k)}</span>`).join("")}</div>`:""}
+        <p class="note" style="margin:2px 0">Click the ones you really have, then tailor again to add them. Recruiters ask about everything on your resume.</p>
+        <div class="chips">${t.not_shown.filter(x => !NOT_A_SKILL.test(x)).map(x => skillChip(skillName(x), x)).join("") || '<span class="note">None</span>'}</div>
+        ${t.not_shown.some(x => NOT_A_SKILL.test(x)) ? `<div class="label">Other requirements to check</div><div class="chips">${t.not_shown.filter(x => NOT_A_SKILL.test(x)).map(x => `<span class="chip">${esc(x)}</span>`).join("")}</div>` : ""}`:""}
       <details ${busy.editOpen?"open":""} id="editDetails"><summary>Edit resume</summary>${editorHtml(t)}
         <div class="row" style="margin-top:8px"><button class="primary" id="saveResume">${busy.save?'<span class="spin"></span> Saving…':"Save and update PDF"}</button></div></details>
       <iframe class="preview" src="/api/job/${d.id}/resume.pdf#view=FitH&t=${Date.now()}"></iframe>`;

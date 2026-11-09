@@ -53,9 +53,11 @@ italic second line, e.g. the degree and GPA; usually empty for jobs), and `bulle
 `bullets` with no entries.
 - Copy the name and contact items exactly as they appear on the original.
 
-In `changes`, list each change you made in a few words. In `not_shown`, list skills or \
-requirements the posting asks for that the resume gives no evidence of, so the student \
-can add them only if they really have them."""
+In `changes`, list each change you made in a few words. In `not_shown`, list the skills, \
+tools and areas of knowledge the posting asks for that the resume gives no evidence of, \
+each as a short name of 1-4 words (e.g. "Azure", "Terraform", "Linux administration", \
+"A/B testing"), so the student can confirm the ones they really have. Leave out \
+eligibility requirements such as citizenship, clearance, GPA or graduation date."""
 
 
 class Entry(BaseModel):
