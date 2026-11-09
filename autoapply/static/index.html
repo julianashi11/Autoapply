@@ -76,6 +76,10 @@ main{display:grid;grid-template-columns:minmax(330px,420px) 1fr;height:calc(100%
 .chip{font-size:12px;padding:2px 9px;border-radius:999px;background:var(--chip)}
 .chip.ok{background:var(--good-bg);color:var(--good)}
 .chip.no{background:var(--bad-bg);color:var(--bad)}
+button.chip{border:1px dashed currentColor;cursor:pointer;font:inherit;font-size:12px;line-height:1.45}
+button.chip:hover{filter:brightness(.95)}
+button.chip.have{background:var(--good-bg);color:var(--good);border-style:solid}
+.callout{background:var(--sel);border-radius:8px;padding:8px 12px;margin:8px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin:10px 0 2px}
 .score{display:flex;align-items:center;gap:14px}
 .screens{display:flex;gap:12px;flex-wrap:wrap;align-items:stretch;margin-bottom:8px}
@@ -165,6 +169,9 @@ button.cur{background:var(--sel);border-color:var(--accent);color:var(--accent);
     It is saved only on this computer, in <code>data/settings.json</code>.</p>
   <input id="keyInput" type="password" placeholder="sk-ant-…" style="width:100%">
   <p class="note" id="keyStatus"></p>
+  <div class="label" style="margin-top:14px">Skills you have that aren't on your resume</div>
+  <p class="note" style="margin:2px 0 6px">Added to the Skills section of every tailored resume. One per line or comma-separated.</p>
+  <textarea id="skillsInput" rows="4" placeholder="e.g. Linux, GitHub Actions, Figma"></textarea>
   <div class="row" style="justify-content:flex-end;margin-top:12px">
     <button id="keyClear">Remove key</button>
     <button onclick="settings.close()">Cancel</button>
@@ -200,6 +207,17 @@ function leadText(j){
 function scoreClass(s){ return s>=55?"hi":s>=35?"mid":"lo"; }
 function screenLabel(s){ return (s<35?"Unlikely":s<55?"Possible":s<75?"Likely":"Strong") + " to pass"; }
 const ICON = {good:"✓", warn:"!", bad:"✕", neutral:"·"};
+function hasSkill(k){ return (S.my_skills || []).some(x => x.toLowerCase() === k.toLowerCase()); }
+function skillChip(k){
+  const have = hasSkill(k);
+  return `<button class="chip ${have ? "have" : "no"}" data-skill="${esc(k)}" title="${have ? "You have this. Click to undo" : "Click if you have this skill"}">${have ? "✓ " : "+ "}${esc(k)}</button>`;
+}
+// Confirmed skills this tailored resume doesn't include yet.
+function pendingSkills(d){
+  if (!d.tailored) return [];
+  const text = JSON.stringify(d.tailored.sections).toLowerCase();
+  return (S.my_skills || []).filter(k => (d.match?.missing || []).some(m => m.toLowerCase() === k.toLowerCase()) && !text.includes(k.toLowerCase()));
+}
 function screenHtml(sc, label){
   return `<div class="screen ${scoreClass(sc.score)}"><div class="lvl">${sc.level}</div><div class="bar"><span style="width:${sc.score}%"></span></div><div class="note">${label} · ${sc.score}/100</div></div>`;
 }
@@ -311,7 +329,9 @@ function renderDetail(){
       <div class="note" style="max-width:420px">Share of the posting's skills and keywords that appear on your resume.
       ATS filters and recruiters search for these words.</div></div>
       <div class="label">On your resume</div><div class="chips">${m.matched.map(k=>`<span class="chip ok">${esc(k)}</span>`).join("") || '<span class="note">None found</span>'}</div>
-      <div class="label">Posting asks for, not on your resume</div><div class="chips">${m.missing.map(k=>`<span class="chip no">${esc(k)}</span>`).join("") || '<span class="note">Nothing missing</span>'}</div>`;
+      <div class="label">Posting asks for, not on your resume</div>
+      ${m.missing.length ? `<p class="note" style="margin:2px 0">Click the ones you really have (from classes, projects or anywhere). They'll be added to your Skills section when you tailor.</p>` : ""}
+      <div class="chips">${m.missing.map(k => skillChip(k)).join("") || '<span class="note">Nothing missing</span>'}</div>`;
   } else if (d.jd && d.match_error){
     matchHtml = `<div class="err">${esc(d.match_error)}</div>`;
   } else if (d.jdError){
@@ -337,6 +357,8 @@ function renderDetail(){
         <span class="spacer"></span>
         <button id="retailorBtn" ${!S.can_tailor?"disabled":""}>${busy.tailor?'<span class="spin"></span> Tailoring…':"Tailor again"}</button>
         <button id="discardBtn">Discard</button></div>
+      ${pendingSkills(d).length ? `<div class="callout"><span>You confirmed ${pendingSkills(d).map(esc).join(", ")} after this version was made.</span>
+        <button class="primary" id="retailorBtn2">Tailor again to add ${pendingSkills(d).length === 1 ? "it" : "them"}</button></div>` : ""}
       ${t.changes?.length?`<div class="label">What changed</div><ul class="plain">${t.changes.map(c=>`<li>${esc(c)}</li>`).join("")}</ul>`:""}
       ${t.not_shown?.length?`<div class="label">Posting wants, resume doesn't show</div>
         <p class="note">Add these in the editor only if you really have the experience. Recruiters ask about everything on your resume.</p>
@@ -426,6 +448,14 @@ function bindDetail(){
   };
   $("#tailorBtn")?.addEventListener("click", doTailor);
   $("#retailorBtn")?.addEventListener("click", doTailor);
+  $("#retailorBtn2")?.addEventListener("click", doTailor);
+  document.querySelectorAll("#right button[data-skill]").forEach(b => b.onclick = async () => {
+    const k = b.dataset.skill;
+    const r = await api("/api/skills", hasSkill(k) ? {remove: k} : {add: k});
+    S.my_skills = r.my_skills;
+    toast(hasSkill(k) ? `Added ${k} to your skills` : `Removed ${k}`);
+    renderDetail();
+  });
   $("#discardBtn")?.addEventListener("click", async () => { detail = {...await api(`/api/job/${d.id}/discard`, {}), report:d.report}; renderDetail(); poll(); });
   $("#editDetails")?.addEventListener("toggle", e => busy.editOpen = e.target.open);
   $("#saveResume")?.addEventListener("click", async () => {
@@ -448,9 +478,16 @@ function nextJob(){
 }
 
 // ---------- settings ----------
-function openSettings(){ $("#keyInput").value=""; $("#keyStatus").textContent = S.has_key ? "A key is saved." : "No key saved yet."; $("#settings").showModal(); }
+function openSettings(){ $("#keyInput").value=""; $("#keyStatus").textContent = S.has_key ? "A key is saved." : "No key saved yet.";
+  $("#skillsInput").value = (S.my_skills || []).join("\n"); $("#settings").showModal(); }
+async function saveSkills(){
+  const skills = $("#skillsInput").value.split(/[\n,]/).map(x => x.trim()).filter(Boolean);
+  S.my_skills = (await api("/api/skills", {skills})).my_skills;
+}
 $("#settingsBtn").onclick = openSettings;
-$("#keySave").onclick = async () => { const r = await api("/api/settings", {anthropic_api_key: $("#keyInput").value}); S.has_key = r.has_key; $("#settings").close(); toast(r.has_key?"Key saved":"Key removed"); if (detail) renderDetail(); };
+$("#keySave").onclick = async () => { await saveSkills();
+  if (!$("#keyInput").value.trim()) { $("#settings").close(); toast("Saved"); if (detail) renderDetail(); return; }
+  const r = await api("/api/settings", {anthropic_api_key: $("#keyInput").value}); S.has_key = r.has_key; $("#settings").close(); toast(r.has_key?"Key saved":"Key removed"); if (detail) renderDetail(); };
 $("#keyClear").onclick = async () => { const r = await api("/api/settings", {anthropic_api_key: ""}); S.has_key = r.has_key; $("#settings").close(); toast("Key removed"); if (detail) renderDetail(); };
 
 poll();

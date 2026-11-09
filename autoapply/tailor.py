@@ -24,7 +24,11 @@ through ATS keyword screening and reads well to a recruiter.
 
 Hard rules:
 - Use only facts that are in the original resume. Never add an employer, title, date, \
-degree, metric, tool, language or skill that the resume doesn't already show.
+degree, metric, tool, language or skill that the resume doesn't already show, except the \
+skills listed in <confirmed_skills>, which the student has confirmed they have.
+- Add every confirmed skill to the Skills section, grouped with similar ones. Work one \
+into an existing bullet only if that bullet's work clearly used it; never invent new \
+projects, jobs or bullets for it.
 - Keep every number exactly as written.
 - It must fit on ONE page at the original's font size. Keep it the same length as the \
 original or shorter; if the original is long, cut the least relevant bullets first.
@@ -186,11 +190,14 @@ def default_style():
 
 # ---------- tailoring ----------
 
-def _prompt(base_text, job, jd_text, feedback=None):
+def _prompt(base_text, job, jd_text, feedback=None, skills=None):
     p = (
         f"<posting>\nCompany: {job['company']}\nRole: {job['title']}\n\n{jd_text}\n</posting>\n\n"
-        f"<resume>\n{base_text}\n</resume>\n\nTailor the resume to this posting."
+        f"<resume>\n{base_text}\n</resume>\n\n"
     )
+    if skills:
+        p += f"<confirmed_skills>\n{', '.join(skills)}\n</confirmed_skills>\n\n"
+    p += "Tailor the resume to this posting."
     if feedback:
         p += f"\n\n{feedback}"
     return p
@@ -229,9 +236,11 @@ def tailor_cli(prompt):
     return Resume.model_validate(out["structured_output"]).model_dump()
 
 
-def tailor(api_key, base_text, job, jd_text, feedback=None):
-    """Uses Claude Code (your Claude login) when it's installed, otherwise the API key."""
-    prompt = _prompt(base_text, job, jd_text, feedback)
+def tailor(api_key, base_text, job, jd_text, feedback=None, skills=None):
+    """Uses Claude Code (your Claude login) when it's installed, otherwise the API key.
+
+    `skills`: skills the student confirmed they have that aren't on the resume yet."""
+    prompt = _prompt(base_text, job, jd_text, feedback, skills)
     if claude_cli():
         return tailor_cli(prompt)
     if not api_key:

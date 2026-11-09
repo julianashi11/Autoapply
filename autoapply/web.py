@@ -48,6 +48,11 @@ def save_settings(s):
     os.chmod(SETTINGS, 0o600)
 
 
+def my_skills():
+    """Skills you've confirmed you have that aren't on your resume (saved on this computer)."""
+    return load_settings().get("my_skills") or []
+
+
 def api_key():
     return os.environ.get("ANTHROPIC_API_KEY") or load_settings().get("anthropic_api_key")
 
@@ -316,6 +321,17 @@ class Handler(BaseHTTPRequestHandler):
                 threading.Thread(target=refresh, daemon=True).start()
                 return self._send(200, {"ok": True, "message": "Cloud scan started; new roles show up here in about 8 minutes."
                                         if started else "Checked for the latest results."})
+            if path == "/api/skills" and method == "POST":
+                body = self._body()
+                st = load_settings()
+                skills = [x.strip() for x in body.get("skills", st.get("my_skills") or []) if x and x.strip()]
+                if body.get("add"):
+                    skills.append(body["add"].strip())
+                if body.get("remove"):
+                    skills = [x for x in skills if x.lower() != body["remove"].strip().lower()]
+                st["my_skills"] = list(dict.fromkeys(skills))
+                save_settings(st)
+                return self._send(200, {"my_skills": st["my_skills"]})
             if path == "/api/settings":
                 if method == "POST":
                     s = load_settings()
@@ -367,6 +383,7 @@ class Handler(BaseHTTPRequestHandler):
             "progress": state["progress"],
             "info": state["info"],
             "has_key": bool(api_key()),
+            "my_skills": my_skills(),
             "can_tailor": bool(api_key() or tailor.claude_cli()),
             "tailor_via": "cli" if tailor.claude_cli() else "key" if api_key() else None,
             "refresh_every": REFRESH_EVERY,
@@ -397,13 +414,14 @@ class Handler(BaseHTTPRequestHandler):
             text = ensure_jd(conn, row)
             profile = load_profile()
             base = base_resume_text(profile, row["track"])
-            resume = tailor.tailor(key, base, dict(row), text)
+            skills = my_skills()
+            resume = tailor.tailor(key, base, dict(row), text, skills=skills)
             fit = render_and_save(conn, get_job(conn, job_id), resume)
             if not fit["fits"]:
                 # Still too long at the smallest allowed size: ask for a shorter version once.
                 style = base_style(row)
                 lines = max(2, round(fit["overflow"] / (fit["fs"] * 96 / 72 * fit["lh"])) + 1)
-                resume = tailor.tailor(key, base, dict(row), text, feedback=(
+                resume = tailor.tailor(key, base, dict(row), text, skills=skills, feedback=(
                     f"Your previous version ran about {lines} lines past one page. Cut at least "
                     f"{lines} lines: drop the least relevant bullets or entries and shorten "
                     f"bullets that wrap onto a second line by only a few words."))
