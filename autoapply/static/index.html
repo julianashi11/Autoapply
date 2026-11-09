@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Autoapply</title>
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#fff; --ink:#15181d; --muted:#626a76; --line:#e3e6eb; --soft:#f0f2f5;
+  --accent:#2f5bea; --accent-ink:#fff; --good:#13804b; --good-bg:#e5f5ec; --warn:#a15c00; --warn-bg:#fdf1de;
+  --bad:#b42318; --bad-bg:#fde8e7; --chip:#eef1f6; --sel:#eaf0ff; --new:#7a3cf0; --new-bg:#efe7ff;
+  --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08);
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#0f1115; --panel:#171a20; --ink:#e7e9ee; --muted:#9aa3b2; --line:#272c35; --soft:#1d2129;
+  --accent:#6d8cff; --accent-ink:#0b0d12; --good:#4cc38a; --good-bg:#11291e; --warn:#f0b35a; --warn-bg:#2d2213;
+  --bad:#ff8a80; --bad-bg:#2e1614; --chip:#222732; --sel:#1c2540; --new:#b598ff; --new-bg:#241b3b;
+  --shadow:none;
+}}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:6px 12px}
+button:hover{background:var(--soft)}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+button.primary:hover{filter:brightness(1.08)}
+button:disabled{opacity:.55;cursor:default}
+input,select,textarea{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+textarea{width:100%;resize:vertical}
+a{color:var(--accent)}
+
+header{display:flex;align-items:center;gap:14px;padding:10px 18px;border-bottom:1px solid var(--line);background:var(--panel)}
+header h1{font-size:16px;margin:0;letter-spacing:.2px}
+.live{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:13px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--good);box-shadow:0 0 0 0 var(--good);animation:pulse 2s infinite}
+.dot.busy{background:var(--warn)} .dot.err{background:var(--bad);animation:none}
+@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--good) 60%,transparent)}70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
+.spacer{flex:1}
+.stats{display:flex;gap:6px}
+.stat{padding:3px 10px;border-radius:999px;background:var(--chip);font-size:12.5px;color:var(--muted)}
+.stat b{color:var(--ink)}
+
+main{display:grid;grid-template-columns:minmax(330px,420px) 1fr;height:calc(100% - 53px)}
+#left{border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;background:var(--panel)}
+.filters{padding:10px 12px;display:flex;flex-wrap:wrap;gap:6px;border-bottom:1px solid var(--line)}
+.filters input[type=search]{flex:1 1 100%}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;border-radius:0;padding:5px 10px}
+.seg button.on{background:var(--sel);color:var(--accent);font-weight:600}
+.count{padding:6px 14px;color:var(--muted);font-size:12.5px;border-bottom:1px solid var(--line)}
+#list{overflow:auto;flex:1}
+.job{padding:10px 14px;border-bottom:1px solid var(--line);cursor:pointer}
+.job:hover{background:var(--soft)}
+.job.sel{background:var(--sel)}
+.job .co{font-weight:600}
+.job .ti{margin:1px 0 4px}
+.meta{display:flex;flex-wrap:wrap;gap:5px;align-items:center;color:var(--muted);font-size:12px}
+.badge{font-size:11px;padding:1px 7px;border-radius:999px;background:var(--chip);color:var(--muted);white-space:nowrap}
+.badge.new{background:var(--new-bg);color:var(--new);font-weight:600}
+.badge.direct{background:var(--sel);color:var(--accent);font-weight:600}
+.badge.applied{background:var(--good-bg);color:var(--good)}
+.badge.later{background:var(--warn-bg);color:var(--warn)}
+.badge.skipped{opacity:.7}
+.badge.hi{background:var(--good-bg);color:var(--good)} .badge.mid{background:var(--warn-bg);color:var(--warn)} .badge.lo{background:var(--bad-bg);color:var(--bad)}
+
+#right{overflow:auto;padding:22px 28px 60px}
+.empty{color:var(--muted);text-align:center;margin-top:18vh}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:14px;box-shadow:var(--shadow)}
+.card h3{margin:0 0 10px;font-size:14px;display:flex;align-items:center;gap:8px}
+.card h3 .step{width:20px;height:20px;border-radius:50%;background:var(--chip);display:inline-grid;place-items:center;font-size:11.5px;color:var(--muted)}
+.title h2{margin:0;font-size:20px}
+.title .sub{color:var(--muted);margin:3px 0 10px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin:6px 0}
+.chip{font-size:12px;padding:2px 9px;border-radius:999px;background:var(--chip)}
+.chip.ok{background:var(--good-bg);color:var(--good)}
+.chip.no{background:var(--bad-bg);color:var(--bad)}
+.label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin:10px 0 2px}
+.score{display:flex;align-items:center;gap:14px}
+.screens{display:flex;gap:12px;flex-wrap:wrap;align-items:stretch;margin-bottom:8px}
+.screen{flex:1 1 200px;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.screen .lvl{font-size:18px;font-weight:700}
+.screen.hi .lvl{color:var(--good)} .screen.mid .lvl{color:var(--warn)} .screen.lo .lvl{color:var(--bad)}
+.screen .bar{height:6px;border-radius:3px;background:var(--chip);margin:6px 0 4px;overflow:hidden}
+.screen .bar span{display:block;height:100%;background:currentColor}
+.screen.hi .bar span{background:var(--good)} .screen.mid .bar span{background:var(--warn)} .screen.lo .bar span{background:var(--bad)}
+ul.factors{list-style:none;padding:0;margin:6px 0}
+ul.factors li{display:flex;gap:8px;padding:3px 0}
+ul.factors .ic{width:18px;height:18px;flex:none;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;background:var(--chip);color:var(--muted)}
+ul.factors .good .ic{background:var(--good-bg);color:var(--good)} ul.factors .warn .ic{background:var(--warn-bg);color:var(--warn)} ul.factors .bad .ic{background:var(--bad-bg);color:var(--bad)}
+.ring{--p:0;width:64px;height:64px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:16px;
+  background:radial-gradient(closest-side,var(--panel) 78%,transparent 80%),conic-gradient(var(--c,var(--accent)) calc(var(--p)*1%),var(--chip) 0)}
+.arrow{color:var(--muted);font-size:20px}
+details summary{cursor:pointer;color:var(--muted);margin-top:8px}
+.jd{white-space:pre-wrap;max-height:320px;overflow:auto;background:var(--soft);padding:10px 12px;border-radius:8px;font-size:13px;margin-top:6px}
+.note{font-size:12.5px;color:var(--muted)}
+.err{color:var(--bad);font-size:13px;margin-top:6px}
+ul.plain{margin:4px 0;padding-left:18px}
+.editor .sec{border:1px solid var(--line);border-radius:10px;padding:10px;margin:10px 0}
+.editor .entry{border-top:1px dashed var(--line);padding-top:8px;margin-top:8px}
+.editor .grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px}
+.editor input{width:100%}
+.preview{width:100%;height:760px;border:1px solid var(--line);border-radius:8px;background:#fff;margin-top:10px}
+.report li.need{color:var(--warn)}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:sp .8s linear infinite;vertical-align:-2px}
+@keyframes sp{to{transform:rotate(360deg)}}
+dialog{border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink);padding:18px;width:min(460px,92vw)}
+dialog::backdrop{background:rgba(0,0,0,.35)}
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--panel);padding:8px 14px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.show{opacity:1}
+@media (max-width:860px){
+  main{grid-template-columns:1fr;height:auto}
+  #left{max-height:55vh}
+  #right{padding:16px}
+  .stats{display:none}
+  header{gap:8px;padding:10px 12px;flex-wrap:wrap}
+  .live{order:5;flex-basis:100%}
+  #liveText{max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+}
+button.cur{background:var(--sel);border-color:var(--accent);color:var(--accent);font-weight:600}
+</style>
+</head>
+<body>
+<header>
+  <h1>Autoapply</h1>
+  <div class="live" id="live"><span class="dot"></span><span id="liveText">Connecting…</span></div>
+  <button id="refreshBtn" title="Check for new postings now">Refresh</button>
+  <div class="spacer"></div>
+  <div class="stats" id="stats"></div>
+  <button id="settingsBtn">Settings</button>
+</header>
+
+<main>
+  <section id="left">
+    <div class="filters">
+      <input type="search" id="q" placeholder="Search company, title, location">
+      <div class="seg" id="trackSeg">
+        <button data-v="" class="on">All</button><button data-v="swe">SWE</button><button data-v="pm">PM</button>
+      </div>
+      <select id="status">
+        <option value="new">To do</option><option value="later">Later</option>
+        <option value="applied">Applied</option><option value="skipped">Skipped</option><option value="">All</option>
+      </select>
+      <select id="source">
+        <option value="">All sources</option><option value="direct">Company sites only</option><option value="early">Found before GitHub</option>
+      </select>
+      <select id="ats">
+        <option value="auto">Autofill sites</option><option value="">All sites</option>
+        <option value="greenhouse">Greenhouse</option><option value="lever">Lever</option>
+        <option value="ashby">Ashby</option><option value="workday">Workday</option><option value="other">Other</option>
+      </select>
+    </div>
+    <div class="count" id="count"></div>
+    <div id="list"></div>
+  </section>
+  <section id="right"><div class="empty">Pick a role on the left.</div></section>
+</main>
+
+<dialog id="settings">
+  <h3 style="margin-top:0">Settings</h3>
+  <p class="note">Resume tailoring runs through Claude Code on this computer, using your Claude login. No key needed.
+    Optional: to use the API instead, paste an Anthropic API key from
+    <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>.
+    It is saved only on this computer, in <code>data/settings.json</code>.</p>
+  <input id="keyInput" type="password" placeholder="sk-ant-…" style="width:100%">
+  <p class="note" id="keyStatus"></p>
+  <div class="row" style="justify-content:flex-end;margin-top:12px">
+    <button id="keyClear">Remove key</button>
+    <button onclick="settings.close()">Cancel</button>
+    <button class="primary" id="keySave">Save</button>
+  </div>
+</dialog>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const AUTO = new Set(["greenhouse","lever","ashby"]);
+let S = {jobs: [], new_ids: []}, sel = null, detail = null, track = "", busy = {};
+let firstLoad = true, knownIds = new Set(), freshIds = new Set();
+
+async function api(path, body){
+  const opt = body === undefined ? {} : {method:"POST", headers:{"Content-Type":"application/json","X-Autoapply":"1"}, body:JSON.stringify(body)};
+  const r = await fetch(path, opt);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),2600); }
+function ago(ts){ if(!ts) return ""; const d=(Date.now()/1000-ts); if(d<3600) return Math.max(1,Math.round(d/60))+"m ago"; if(d<86400) return Math.round(d/3600)+"h ago"; return Math.round(d/86400)+"d ago"; }
+// Found on the company's own site before (or without) the GitHub list having it.
+function early(j){ return j.found_by === "direct"; }
+function leadText(j){
+  if (j.found_by !== "direct") return "";
+  if (j.source === "direct") return "Only on company site";
+  return j.lead_hours > 1 ? `Found ${j.lead_hours < 48 ? Math.round(j.lead_hours)+"h" : Math.round(j.lead_hours/24)+"d"} before GitHub` : "Found on company site first";
+}
+function scoreClass(s){ return s>=55?"hi":s>=35?"mid":"lo"; }
+function screenLabel(s){ return (s<35?"Unlikely":s<55?"Possible":s<75?"Likely":"Strong") + " to pass"; }
+const ICON = {good:"✓", warn:"!", bad:"✕", neutral:"·"};
+function screenHtml(sc, label){
+  return `<div class="screen ${scoreClass(sc.score)}"><div class="lvl">${sc.level}</div><div class="bar"><span style="width:${sc.score}%"></span></div><div class="note">${label} · ${sc.score}/100</div></div>`;
+}
+
+// ---------- live state ----------
+async function poll(){
+  try{
+    S = await api("/api/state");
+    // Highlight postings that showed up while the page was open.
+    if (!firstLoad) S.jobs.forEach(j => { if (!knownIds.has(j.id)) freshIds.add(j.id); });
+    const added = firstLoad ? 0 : S.jobs.filter(j => !knownIds.has(j.id)).length;
+    S.jobs.forEach(j => knownIds.add(j.id));
+    if (added) toast(`${added} new posting${added>1?"s":""} just came in`);
+    firstLoad = false;
+    renderHeader(); renderList();
+  }catch(e){ $("#liveText").textContent = "Server not reachable"; $("#live .dot").className="dot err"; }
+}
+function renderHeader(){
+  const dot = $("#live .dot");
+  if (S.fetching){ dot.className="dot busy";
+    $("#liveText").textContent = S.progress ? `Scanning company job boards… ${S.progress[0]}/${S.progress[1]}` : "Checking for new postings…"; }
+  else if (S.fetch_error){ dot.className="dot err"; $("#liveText").textContent="Couldn't refresh: "+S.fetch_error; }
+  else if (S.last_fetch){
+    dot.className="dot";
+    const next = Math.max(0, Math.round((S.last_fetch + S.refresh_every - Date.now()/1000)/60));
+    const boards = S.info ? ` · ${S.info.boards.toLocaleString()} company boards` : "";
+    $("#liveText").textContent = `Live${boards} · updated ${ago(S.last_fetch)} · next scan in ${next}m`;
+  }
+  const c = {new:0, applied:0, later:0};
+  S.jobs.forEach(j => { if (c[j.status] !== undefined) c[j.status]++; });
+  const direct = S.jobs.filter(j => early(j) && j.status === "new").length;
+  $("#stats").innerHTML = `<span class="stat" title="To-do roles found on company sites before or without GitHub"><b>${direct}</b> direct</span><span class="stat"><b>${c.new}</b> to do</span><span class="stat"><b>${c.later}</b> later</span><span class="stat"><b>${c.applied}</b> applied</span>`;
+}
+
+function filtered(){
+  const q = $("#q").value.trim().toLowerCase(), st = $("#status").value, ats = $("#ats").value, src = $("#source").value;
+  return S.jobs.filter(j =>
+    (!track || j.track === track) &&
+    (!st || j.status === st) &&
+    (!src || (src === "direct" ? j.source === "direct" : early(j))) &&
+    (!ats || (ats === "auto" ? AUTO.has(j.ats) : j.ats === ats || (ats==="other" && !["greenhouse","lever","ashby","workday"].includes(j.ats)))) &&
+    (!q || (j.company+" "+j.title+" "+j.locations.join(" ")).toLowerCase().includes(q)));
+}
+function renderList(){
+  const jobs = filtered();
+  $("#count").textContent = `${jobs.length} role${jobs.length===1?"":"s"}`;
+  const L = $("#list");
+  const top = L.scrollTop;
+  L.innerHTML = jobs.slice(0, 400).map(j => {
+    const loc = j.locations[0] ? esc(j.locations[0]) + (j.locations.length>1?` +${j.locations.length-1}`:"") : "";
+    const badges = [
+      freshIds.has(j.id) ? `<span class="badge new">NEW</span>` : "",
+      early(j) ? `<span class="badge direct" title="${esc(leadText(j))}">Direct</span>` : "",
+      `<span class="badge">${j.track.toUpperCase()}</span>`,
+      `<span class="badge">${esc(j.ats)}</span>`,
+      j.screen != null ? `<span class="badge ${scoreClass(j.screen)}" title="Estimated chance of passing the resume screen">${screenLabel(j.screen)}</span>` : "",
+      j.tailored ? `<span class="badge hi">tailored</span>` : "",
+      j.status !== "new" ? `<span class="badge ${j.status}">${j.status}</span>` : "",
+    ].join("");
+    return `<div class="job ${sel===j.id?"sel":""}" data-id="${j.id}">
+      <div class="co">${esc(j.company)}</div><div class="ti">${esc(j.title)}</div>
+      <div class="meta">${loc} · ${ago(j.date_posted)} ${badges}</div></div>`;
+  }).join("") || `<div class="empty" style="margin-top:40px">No roles match these filters.</div>`;
+  L.scrollTop = top;
+}
+$("#list").addEventListener("click", e => { const el = e.target.closest(".job"); if (el) openJob(el.dataset.id); });
+["#q","#status","#ats","#source"].forEach(s => $(s).addEventListener("input", renderList));
+$("#trackSeg").addEventListener("click", e => {
+  if (!e.target.dataset) return; track = e.target.dataset.v ?? track;
+  $("#trackSeg").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.v === track)); renderList();
+});
+$("#refreshBtn").onclick = async () => { await api("/api/refresh", {}); toast("Checking for new postings…"); setTimeout(poll, 800); };
+
+// ---------- job detail ----------
+async function openJob(id){
+  sel = id; freshIds.delete(id); renderList();
+  const j = S.jobs.find(x => x.id === id);
+  $("#right").innerHTML = `<div class="title"><h2>${esc(j.title)}</h2><div class="sub">${esc(j.company)}</div></div><p class="note"><span class="spin"></span> Loading job description…</p>`;
+  try{
+    detail = await api(`/api/job/${id}`);
+    if (!detail.jd){ renderDetail(); detail = await api(`/api/job/${id}/jd`, {}); }
+  }catch(e){ detail = detail || {...j}; detail.jdError = e.message; }
+  if (sel === id) renderDetail();
+  poll();
+}
+
+function ring(score, label){
+  const c = score>=70?"var(--good)":score>=45?"var(--warn)":"var(--bad)";
+  return `<div style="text-align:center"><div class="ring" style="--p:${score};--c:${c}">${score}%</div><div class="note">${label}</div></div>`;
+}
+
+function renderDetail(){
+  const d = detail, m = d.match, tm = d.tailored_match, t = d.tailored;
+  const locs = (d.locations||[]).join(" · ");
+  const statusBtns = ["applied","later","skipped","new"].map(s =>
+    `<button data-status="${s}" ${d.status===s?"class='cur'":""}>${{applied:"Applied",later:"Later",skipped:"Skip",new:"To do"}[s]}</button>`).join("");
+
+  let matchHtml;
+  if (d.jd && m){
+    const sc = d.tailored_screen || d.screen;
+    const screenBlock = d.screen ? `<div class="label">Chance of passing the resume screen (estimate)</div>
+      <div class="screens">${screenHtml(d.screen, "your resume")}${d.tailored_screen ? screenHtml(d.tailored_screen, "tailored resume") : ""}</div>
+      <ul class="factors">${sc.factors.map(f=>`<li class="${f.status}"><span class="ic">${ICON[f.status]}</span><span>${esc(f.text)}</span></li>`).join("")}</ul>
+      <p class="note">Based on what screens check first: requirements like graduation year, degree, GPA and work authorization; skill keywords; formatting; and how early you apply. It's a guide, not a promise.</p>` : "";
+    matchHtml = screenBlock + `<div class="label" style="margin-top:12px">Keyword match</div><div class="score">${ring(m.score, "your resume")}
+      ${tm ? `<span class="arrow">→</span>${ring(tm.score, "tailored")}` : ""}
+      <div class="note" style="max-width:420px">Share of the posting's skills and keywords that appear on your resume.
+      ATS filters and recruiters search for these words.</div></div>
+      <div class="label">On your resume</div><div class="chips">${m.matched.map(k=>`<span class="chip ok">${esc(k)}</span>`).join("") || '<span class="note">None found</span>'}</div>
+      <div class="label">Posting asks for, not on your resume</div><div class="chips">${m.missing.map(k=>`<span class="chip no">${esc(k)}</span>`).join("") || '<span class="note">Nothing missing</span>'}</div>`;
+  } else if (d.jd && d.match_error){
+    matchHtml = `<div class="err">${esc(d.match_error)}</div>`;
+  } else if (d.jdError){
+    matchHtml = `<div class="err">Couldn't load the description (${esc(d.jdError)}). Paste it below.</div>`;
+  } else {
+    matchHtml = `<p class="note"><span class="spin"></span> Loading job description…</p>`;
+  }
+
+  const jdHtml = d.jd ? `<details><summary>Job description</summary><div class="jd">${esc(d.jd)}</div></details>`
+    : `<div class="label">Paste the job description</div><textarea id="jdPaste" rows="5"></textarea><div class="row" style="margin-top:6px"><button id="jdSave">Use this description</button></div>`;
+
+  let tailorHtml;
+  if (!t){
+    tailorHtml = `<p class="note">Claude rewrites your ${d.track==="pm"?"PM":"SWE"} resume for this posting: it puts the most relevant experience first, uses the posting's wording where it truthfully fits, and trims to one page.
+      It only uses what's already on your resume.</p>
+      <div class="row"><button class="primary" id="tailorBtn" ${!S.can_tailor||!d.jd?"disabled":""}>${busy.tailor?'<span class="spin"></span> Tailoring… (about a minute)':"Tailor resume"}</button>
+      ${!S.can_tailor?`<span class="note">Install Claude Code, or add an API key in <a href="#" id="openSettings">Settings</a>.</span>`:`<span class="note">Uses ${S.tailor_via==="cli"?"your Claude Code login (no API key)":"your API key"}.</span>`}</div>`;
+  } else {
+    tailorHtml = `
+      <div class="row"><a class="note" href="/api/job/${d.id}/resume.pdf" target="_blank">Open PDF</a>
+        ${d.pages>1?`<span class="badge lo">${d.pages} pages; trim it to 1</span>`:""}
+        <span class="spacer"></span>
+        <button id="retailorBtn" ${!S.can_tailor?"disabled":""}>${busy.tailor?'<span class="spin"></span> Tailoring…':"Tailor again"}</button>
+        <button id="discardBtn">Discard</button></div>
+      ${t.changes?.length?`<div class="label">What changed</div><ul class="plain">${t.changes.map(c=>`<li>${esc(c)}</li>`).join("")}</ul>`:""}
+      ${t.not_shown?.length?`<div class="label">Posting wants, resume doesn't show</div>
+        <p class="note">Add these in the editor only if you really have the experience. Recruiters ask about everything on your resume.</p>
+        <div class="chips">${t.not_shown.map(k=>`<span class="chip no">${esc(k)}</span>`).join("")}</div>`:""}
+      <details ${busy.editOpen?"open":""} id="editDetails"><summary>Edit resume</summary>${editorHtml(t)}
+        <div class="row" style="margin-top:8px"><button class="primary" id="saveResume">${busy.save?'<span class="spin"></span> Saving…':"Save and update PDF"}</button></div></details>
+      <iframe class="preview" src="/api/job/${d.id}/resume.pdf#view=FitH&t=${Date.now()}"></iframe>`;
+  }
+
+  const rep = d.report;
+  const repHtml = rep ? `<div class="report">
+      ${rep.closed?`<div class="err">This posting may be closed. Check the page.</div>`:""}
+      ${rep.note?`<p class="note">${esc(rep.note)}</p>`:""}
+      <p>Filled <b>${rep.filled.length}</b> field${rep.filled.length===1?"":"s"}${rep.resume?` and uploaded <b>${esc(rep.resume)}</b>`:rep.note?"":" · <span class='err'>resume not uploaded</span>"}.</p>
+      ${rep.unfilled.length?`<div class="label">Needs your answer</div><ul class="plain">${rep.unfilled.map(q=>`<li class="need">${esc(q)}</li>`).join("")}</ul>`:""}
+      ${rep.errors.length?`<details><summary>${rep.errors.length} problem(s)</summary><ul class="plain">${rep.errors.map(e=>`<li>${esc(e)}</li>`).join("")}</ul></details>`:""}
+      <p class="note">Check every field in the browser window, then click Submit there.</p>
+      <div class="row"><button class="primary" data-status="applied">I submitted it</button><button data-status="later">Finish later</button></div></div>` : "";
+
+  $("#right").innerHTML = `
+    <div class="title"><h2>${esc(d.title)}</h2>
+      <div class="sub">${esc(d.company)} · ${esc(locs)} · posted ${ago(d.date_posted)}${d.sponsorship&&d.sponsorship!=="Other"?` · ${esc(d.sponsorship)}`:""}
+        ${leadText(d) ? ` · <span class="badge direct">${esc(leadText(d))}</span>` : ""}</div>
+      <div class="row"><a href="${esc(d.url)}" target="_blank" rel="noopener">View posting ↗</a><span class="spacer"></span>${statusBtns}</div></div>
+    <div class="card" style="margin-top:14px"><h3><span class="step">1</span>Resume screen</h3>${matchHtml}${jdHtml}</div>
+    <div class="card"><h3><span class="step">2</span>Tailored resume</h3>${tailorHtml}</div>
+    <div class="card"><h3><span class="step">3</span>Apply</h3>
+      <p class="note">${AUTO.has(d.ats)?"Opens the application in Chrome and fills it in. It never clicks Submit.":"This site doesn't support autofill yet. The button opens the application so you can fill it in yourself."}</p>
+      <div class="row"><button class="primary" id="fillBtn">${busy.fill?'<span class="spin"></span> Filling…':"Autofill application"}</button>
+      ${t?`<label class="note"><input type="checkbox" id="useTailored" checked> Upload tailored resume</label>`:""}</div>
+      ${repHtml}</div>`;
+  bindDetail();
+}
+
+function editorHtml(t){
+  return `<div class="editor" id="editor">
+    <div class="grid"><input data-k="name" value="${esc(t.name)}" placeholder="Name"><input data-k="contact" value="${esc(t.contact.join(" | "))}" placeholder="Contact (separate with |)"></div>
+    ${t.sections.map((s,si)=>`<div class="sec" data-si="${si}">
+      <input data-k="title" value="${esc(s.title)}" style="font-weight:600">
+      ${s.entries.map((e,ei)=>`<div class="entry" data-ei="${ei}"><div class="grid">
+        <input data-k="organization" value="${esc(e.organization)}" placeholder="Organization">
+        <input data-k="role" value="${esc(e.role)}" placeholder="Role">
+        <input data-k="location" value="${esc(e.location)}" placeholder="Location">
+        <input data-k="dates" value="${esc(e.dates)}" placeholder="Dates"></div>
+        <textarea data-k="bullets" rows="${Math.max(2,e.bullets.length+1)}" placeholder="One bullet per line">${esc(e.bullets.join("\n"))}</textarea></div>`).join("")}
+      ${s.lines.length||!s.entries.length?`<textarea data-k="lines" rows="${Math.max(2,s.lines.length+1)}" placeholder="One line each, e.g. Languages: Python, Java">${esc(s.lines.join("\n"))}</textarea>`:""}
+    </div>`).join("")}</div>`;
+}
+function readEditor(){
+  const t = structuredClone(detail.tailored), ed = $("#editor");
+  t.name = ed.querySelector("[data-k=name]").value.trim();
+  t.contact = ed.querySelector("[data-k=contact]").value.split("|").map(s=>s.trim()).filter(Boolean);
+  const lines = v => v.split("\n").map(s=>s.trim()).filter(Boolean);
+  ed.querySelectorAll(".sec").forEach(secEl => {
+    const s = t.sections[+secEl.dataset.si];
+    s.title = secEl.querySelector("[data-k=title]").value.trim();
+    secEl.querySelectorAll(".entry").forEach(enEl => {
+      const e = s.entries[+enEl.dataset.ei];
+      ["organization","role","location","dates"].forEach(k => e[k] = enEl.querySelector(`[data-k=${k}]`).value.trim());
+      e.bullets = lines(enEl.querySelector("[data-k=bullets]").value);
+    });
+    const l = secEl.querySelector(":scope > [data-k=lines]"); if (l) s.lines = lines(l.value);
+  });
+  return t;
+}
+
+function bindDetail(){
+  const d = detail;
+  document.querySelectorAll("#right [data-status]").forEach(b => b.onclick = async () => {
+    await api(`/api/job/${d.id}/status`, {status:b.dataset.status});
+    d.status = b.dataset.status; toast(`Marked ${b.dataset.status === "new" ? "to do" : b.dataset.status}`);
+    await poll(); if (b.dataset.status !== "new") nextJob(); else renderDetail();
+  });
+  $("#openSettings")?.addEventListener("click", e => { e.preventDefault(); openSettings(); });
+  $("#jdSave")?.addEventListener("click", async () => {
+    const text = $("#jdPaste").value.trim(); if (!text) return;
+    detail = await api(`/api/job/${d.id}/jd`, {text}); renderDetail();
+  });
+  const doTailor = async () => {
+    busy.tailor = true; renderDetail();
+    try{ detail = {...await api(`/api/job/${d.id}/tailor`, {}), report:d.report}; toast("Resume tailored"); }
+    catch(e){ toast(e.message); }
+    busy.tailor = false; if (sel === d.id) renderDetail(); poll();
+  };
+  $("#tailorBtn")?.addEventListener("click", doTailor);
+  $("#retailorBtn")?.addEventListener("click", doTailor);
+  $("#discardBtn")?.addEventListener("click", async () => { detail = {...await api(`/api/job/${d.id}/discard`, {}), report:d.report}; renderDetail(); poll(); });
+  $("#editDetails")?.addEventListener("toggle", e => busy.editOpen = e.target.open);
+  $("#saveResume")?.addEventListener("click", async () => {
+    busy.save = true; const resume = readEditor(); renderDetail();
+    try{ detail = {...await api(`/api/job/${d.id}/resume`, {resume}), report:d.report}; toast("Saved"); }
+    catch(e){ toast(e.message); }
+    busy.save = false; renderDetail();
+  });
+  $("#fillBtn").onclick = async () => {
+    busy.fill = true; renderDetail();
+    try{ d.report = await api(`/api/job/${d.id}/autofill`, {use_tailored: $("#useTailored")?.checked ?? false}); }
+    catch(e){ toast(e.message); }
+    busy.fill = false; if (sel === d.id) renderDetail();
+  };
+}
+function nextJob(){
+  const jobs = filtered(); const i = jobs.findIndex(j => j.id === sel);
+  const nxt = (i >= 0 ? jobs[i+1] : jobs[0]) || jobs[0];
+  if (nxt && nxt.id !== sel) openJob(nxt.id); else renderDetail();
+}
+
+// ---------- settings ----------
+function openSettings(){ $("#keyInput").value=""; $("#keyStatus").textContent = S.has_key ? "A key is saved." : "No key saved yet."; $("#settings").showModal(); }
+$("#settingsBtn").onclick = openSettings;
+$("#keySave").onclick = async () => { const r = await api("/api/settings", {anthropic_api_key: $("#keyInput").value}); S.has_key = r.has_key; $("#settings").close(); toast(r.has_key?"Key saved":"Key removed"); if (detail) renderDetail(); };
+$("#keyClear").onclick = async () => { const r = await api("/api/settings", {anthropic_api_key: ""}); S.has_key = r.has_key; $("#settings").close(); toast("Key removed"); if (detail) renderDetail(); };
+
+poll();
+setInterval(poll, 20000);
+</script>
+</body>
+</html>

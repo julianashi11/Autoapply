@@ -8,6 +8,7 @@ from pathlib import Path
 import yaml
 
 from . import db, feed
+from .config import load_search
 from .fill import application_url, fill_page, looks_closed, resolve_resume
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -52,20 +53,19 @@ def query_jobs(conn, args, statuses=("new",)):
 
 def cmd_fetch(args):
     profile = load_profile()
-    print("Downloading listings feed...")
-    listings = feed.download()
-    jobs = list(feed.matching(listings, profile["search"]))
+    print("Scanning company job boards and the community feed...")
+    search = load_search(profile)
+    jobs, info = feed.collect(search,
+                              progress=lambda d, n: print(f"  {d}/{n} boards", end="\r", flush=True))
+    print(f"Scanned {info['boards']} company boards ({info['failed']} unreachable): "
+          f"{info['direct']} roles found directly, {info['feed']} in the community feed.")
     conn = db.connect()
-    before = {r["id"] for r in conn.execute("SELECT id FROM jobs")}
-    conn.execute("UPDATE jobs SET active=0")
-    for job in jobs:
-        db.upsert(conn, job)
-    conn.commit()
-    new = [j for j in jobs if j["id"] not in before]
+    new_ids = set(db.sync(conn, jobs))
+    new = [j for j in jobs if j["id"] in new_ids]
     by_track = {}
     for j in new:
         by_track[j["track"]] = by_track.get(j["track"], 0) + 1
-    print(f"{len(jobs)} open {profile['search']['term']} roles match your profile; "
+    print(f"{len(jobs)} open {search['term']} roles match your profile; "
           f"{len(new)} are new since the last fetch {by_track or ''}")
     if new:
         print("Run `./aa list` to see them.")
@@ -217,10 +217,17 @@ def main():
 
     sub.add_parser("stats", help="counts by track and status")
 
+    p = sub.add_parser("web", help="open the web app (live postings, tailoring, autofill)")
+    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--no-open", action="store_true", help="don't open a browser tab")
+
     p = sub.add_parser("export", help="write all tracked roles to a CSV")
     p.add_argument("path", nargs="?", default="applications.csv")
 
     args = ap.parse_args()
+    if args.cmd == "web":
+        from .web import serve
+        return serve(args.port, not args.no_open)
     {"fetch": cmd_fetch, "list": cmd_list, "apply": cmd_apply, "mark": cmd_mark,
      "stats": cmd_stats, "export": cmd_export}[args.cmd](args)
 

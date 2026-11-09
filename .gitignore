@@ -5,3 +5,5 @@ profile.yaml
 resumes/
 applications.csv
 .DS_Store
+_site/
+.email_failed

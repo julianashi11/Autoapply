@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Internship Radar</title>
+<meta name="description" content="Open Summer 2027 SWE and PM internships, scanned from company job boards every 10 minutes.">
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#fff; --ink:#15181d; --muted:#626a76; --line:#e3e6eb; --soft:#f0f2f5;
+  --accent:#2f5bea; --good:#13804b; --good-bg:#e5f5ec; --warn:#a15c00; --warn-bg:#fdf1de;
+  --chip:#eef1f6; --sel:#eaf0ff; --new:#7a3cf0; --new-bg:#efe7ff;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1115; --panel:#171a20; --ink:#e7e9ee; --muted:#9aa3b2; --line:#272c35; --soft:#1d2129;
+  --accent:#6d8cff; --good:#4cc38a; --good-bg:#11291e; --warn:#f0b35a; --warn-bg:#2d2213;
+  --chip:#222732; --sel:#1c2540; --new:#b598ff; --new-bg:#241b3b;
+}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif}
+a{color:var(--accent)}
+button,input,select{font:inherit;color:inherit}
+.wrap{max-width:980px;margin:0 auto;padding:0 16px 60px}
+header{padding:22px 0 10px}
+h1{margin:0;font-size:22px}
+.sub{color:var(--muted);margin-top:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--good);display:inline-block}
+.dot.stale{background:var(--warn)}
+.stats{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 14px;min-width:110px}
+.stat b{display:block;font-size:20px}
+.stat span{color:var(--muted);font-size:12px}
+.filters{display:flex;gap:8px;flex-wrap:wrap;position:sticky;top:0;background:var(--bg);padding:10px 0;z-index:2}
+.filters input{flex:1 1 220px}
+input,select{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 10px;min-width:0}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel)}
+.seg button{border:0;background:none;padding:6px 12px;cursor:pointer}
+.seg button.on{background:var(--sel);color:var(--accent);font-weight:600}
+.count{color:var(--muted);font-size:12.5px;margin:6px 0}
+.list{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.job{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-bottom:1px solid var(--line)}
+.job:last-child{border-bottom:0}
+.job.done{opacity:.5}
+.main{flex:1;min-width:0}
+.co{font-weight:600}
+.ti{display:block;margin:1px 0 4px;word-wrap:break-word}
+.meta{display:flex;flex-wrap:wrap;gap:5px;align-items:center;color:var(--muted);font-size:12px}
+.badge{font-size:11px;padding:1px 7px;border-radius:999px;background:var(--chip);white-space:nowrap}
+.badge.new{background:var(--new-bg);color:var(--new);font-weight:600}
+.badge.direct{background:var(--sel);color:var(--accent);font-weight:600}
+.badge.applied{background:var(--good-bg);color:var(--good)}
+.mark{flex:none;display:flex;flex-direction:column;gap:4px}
+.mark button{border:1px solid var(--line);background:var(--panel);border-radius:7px;padding:3px 9px;font-size:12px;cursor:pointer}
+.mark button.on{background:var(--good-bg);color:var(--good);border-color:transparent}
+.empty{padding:40px;text-align:center;color:var(--muted)}
+footer{color:var(--muted);font-size:12px;margin-top:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Internship Radar</h1>
+    <div class="sub"><span class="dot" id="dot"></span><span id="updated">Loading…</span></div>
+  </header>
+  <div class="stats" id="stats"></div>
+  <div class="filters">
+    <input type="search" id="q" placeholder="Search company, title, location">
+    <div class="seg" id="track"><button data-v="" class="on">All</button><button data-v="swe">SWE</button><button data-v="pm">PM</button></div>
+    <select id="when"><option value="">Any time</option><option value="1">New today</option><option value="3">Last 3 days</option><option value="7">Last 7 days</option></select>
+    <select id="src"><option value="">All sources</option><option value="direct">Found on company sites first</option></select>
+    <select id="mine"><option value="todo">Hide applied</option><option value="">Show all</option><option value="applied">Applied only</option></select>
+  </div>
+  <div class="count" id="count"></div>
+  <div class="list" id="list"><div class="empty">Loading postings…</div></div>
+  <footer>Scans about 2,200 company job boards (Greenhouse, Lever, Ashby, Workday, SmartRecruiters) every 10 minutes, plus the
+    <a href="https://github.com/SimplifyJobs/Summer2027-Internships">SimplifyJobs list</a>. "Applied" marks are saved in this browser only.</footer>
+</div>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let D = {jobs: []}, track = "";
+let applied = {};
+try { applied = JSON.parse(localStorage.getItem("applied") || "{}"); } catch (e) {}
+const save = () => { try { localStorage.setItem("applied", JSON.stringify(applied)); } catch (e) {} };
+const ago = ts => { if (!ts) return ""; const d = Date.now()/1000 - ts;
+  return d < 3600 ? Math.max(1, Math.round(d/60)) + "m ago" : d < 86400 ? Math.round(d/3600) + "h ago" : Math.round(d/86400) + "d ago"; };
+const lead = j => j.found_by !== "direct" ? "" : j.source === "direct" ? "Only on company site"
+  : j.lead_hours > 1 ? `Found ${j.lead_hours < 48 ? Math.round(j.lead_hours) + "h" : Math.round(j.lead_hours/24) + "d"} before GitHub` : "Found on company site first";
+
+async function load(){
+  try {
+    const r = await fetch("jobs.json?t=" + Date.now(), {cache: "no-store"});
+    D = await r.json();
+  } catch (e) { $("#updated").textContent = "Couldn't load postings."; return; }
+  const age = Date.now()/1000 - D.updated;
+  $("#dot").className = "dot" + (age > 3600 ? " stale" : "");
+  $("#updated").textContent = `Updated ${ago(D.updated)} · ${D.info.boards.toLocaleString()} company boards scanned`;
+  const day = Date.now()/1000 - 86400;
+  $("#stats").innerHTML = [
+    [D.jobs.length, "open roles"],
+    [D.jobs.filter(j => j.first_seen > day).length, "new today"],
+    [D.jobs.filter(j => j.found_by === "direct").length, "found on company sites first"],
+    [Object.keys(applied).length, "you've applied"],
+  ].map(([n, l]) => `<div class="stat"><b>${n.toLocaleString()}</b><span>${l}</span></div>`).join("");
+  render();
+}
+
+function render(){
+  const q = $("#q").value.trim().toLowerCase(), when = +$("#when").value, src = $("#src").value, mine = $("#mine").value;
+  const since = when ? Date.now()/1000 - when*86400 : 0;
+  const jobs = D.jobs.filter(j =>
+    (!track || j.track === track) &&
+    (!since || j.first_seen >= since) &&
+    (!src || j.found_by === "direct") &&
+    (mine !== "todo" || !applied[j.id]) && (mine !== "applied" || applied[j.id]) &&
+    (!q || (j.company + " " + j.title + " " + j.locations.join(" ")).toLowerCase().includes(q)))
+    .sort((a, b) => (b.first_seen || 0) - (a.first_seen || 0) || (b.date_posted || 0) - (a.date_posted || 0));
+  $("#count").textContent = `${jobs.length.toLocaleString()} role${jobs.length === 1 ? "" : "s"}`;
+  const day = Date.now()/1000 - 86400;
+  $("#list").innerHTML = jobs.slice(0, 500).map(j => {
+    const loc = j.locations[0] ? esc(j.locations[0]) + (j.locations.length > 1 ? ` +${j.locations.length - 1}` : "") : "";
+    const done = !!applied[j.id];
+    return `<div class="job ${done ? "done" : ""}">
+      <div class="main"><div class="co">${esc(j.company)}</div>
+        <a class="ti" href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.title)}</a>
+        <div class="meta">${loc}${loc ? " · " : ""}found ${ago(j.first_seen)}
+          ${j.first_seen > day ? '<span class="badge new">NEW</span>' : ""}
+          ${lead(j) ? `<span class="badge direct">${esc(lead(j))}</span>` : ""}
+          <span class="badge">${j.track.toUpperCase()}</span><span class="badge">${esc(j.ats)}</span></div></div>
+      <div class="mark"><button data-id="${esc(j.id)}" class="${done ? "on" : ""}">${done ? "Applied ✓" : "Mark applied"}</button></div></div>`;
+  }).join("") || '<div class="empty">No roles match these filters.</div>';
+}
+
+$("#list").addEventListener("click", e => {
+  const b = e.target.closest("button[data-id]"); if (!b) return;
+  const id = b.dataset.id; if (applied[id]) delete applied[id]; else applied[id] = Date.now(); save(); render();
+});
+["#q", "#when", "#src", "#mine"].forEach(s => $(s).addEventListener("input", render));
+$("#track").addEventListener("click", e => { if (e.target.dataset.v === undefined) return; track = e.target.dataset.v;
+  $("#track").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.v === track)); render(); });
+load();
+setInterval(load, 5 * 60 * 1000);
+</script>
+</body>
+</html>

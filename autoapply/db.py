@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import threading
 from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "jobs.db"
@@ -25,12 +26,47 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 """
 
+# Columns added after the first version; created on demand for existing databases.
+EXTRA_COLUMNS = {
+    "first_seen": "TEXT",
+    "jd": "TEXT",              # job description text
+    "score": "INTEGER",        # keyword match % for the base resume
+    "tailored": "TEXT",        # tailored resume JSON
+    "tailored_pdf": "TEXT",    # path to the tailored PDF
+    "canon": "TEXT",           # source-independent posting key, e.g. gh:12345
+    "source": "TEXT",          # direct | simplify | both (latest scan)
+    "found_by": "TEXT",        # which source saw it first
+    "feed_seen": "TEXT",       # when the community feed first listed it
+    "last_seen": "TEXT",
+    "screen": "INTEGER",       # screening-chance estimate (0-100) for the resume you'd send
+}
+
+STALE_AFTER = "-3 hours"  # a posting missing from scans this long is treated as closed
+
+_lock = threading.Lock()
+_migrated = False
+
 
 def connect():
+    global _migrated
     DB_PATH.parent.mkdir(exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
-    conn.executescript(SCHEMA)
+    if _migrated:
+        return conn
+    with _lock:
+        conn.executescript(SCHEMA)
+        have = {r["name"] for r in conn.execute("PRAGMA table_info(jobs)")}
+        for col, typ in EXTRA_COLUMNS.items():
+            if col not in have:
+                conn.execute(f"ALTER TABLE jobs ADD COLUMN {col} {typ}")
+        conn.execute("UPDATE jobs SET first_seen=datetime('now','localtime') WHERE first_seen IS NULL")
+        from .direct import canon
+        for r in conn.execute("SELECT id, url FROM jobs WHERE canon IS NULL").fetchall():
+            conn.execute("UPDATE jobs SET canon=?, found_by=COALESCE(found_by,'simplify'), "
+                         "feed_seen=COALESCE(feed_seen, first_seen) WHERE id=?", (canon(r["url"]), r["id"]))
+        conn.commit()
+        _migrated = True
     return conn
 
 
@@ -39,24 +75,55 @@ def upsert(conn, job):
     conn.execute(
         """
         INSERT INTO jobs (id, company, title, url, locations, category, track, ats,
-                          sponsorship, date_posted, active)
+                          sponsorship, date_posted, active, first_seen, canon, source,
+                          found_by, feed_seen, last_seen)
         VALUES (:id, :company, :title, :url, :locations, :category, :track, :ats,
-                :sponsorship, :date_posted, 1)
+                :sponsorship, :date_posted, 1, datetime('now','localtime'), :canon, :source,
+                :source, CASE WHEN :source != 'direct' THEN datetime('now','localtime') END,
+                datetime('now','localtime'))
         ON CONFLICT(id) DO UPDATE SET
             company=excluded.company, title=excluded.title, url=excluded.url,
             locations=excluded.locations, category=excluded.category,
-            track=excluded.track, ats=excluded.ats, sponsorship=excluded.sponsorship,
-            active=1
+            track=excluded.track, ats=excluded.ats,
+            sponsorship=COALESCE(excluded.sponsorship, jobs.sponsorship),
+            date_posted=COALESCE(MIN(jobs.date_posted, excluded.date_posted), excluded.date_posted, jobs.date_posted),
+            canon=COALESCE(excluded.canon, jobs.canon), source=excluded.source,
+            feed_seen=COALESCE(jobs.feed_seen, CASE WHEN excluded.source != 'direct'
+                               THEN datetime('now','localtime') END),
+            last_seen=datetime('now','localtime'), active=1
         """,
-        {**job, "locations": json.dumps(job["locations"])},
+        {"canon": None, "source": "simplify", **job, "locations": json.dumps(job["locations"])},
     )
 
 
 def set_status(conn, job_id, status, notes=None):
     assert status in STATUSES, status
-    conn.execute(
-        "UPDATE jobs SET status=?, status_at=datetime('now','localtime'), "
-        "notes=COALESCE(?, notes) WHERE id=?",
-        (status, notes, job_id),
-    )
-    conn.commit()
+    with _lock:
+        conn.execute(
+            "UPDATE jobs SET status=?, status_at=datetime('now','localtime'), "
+            "notes=COALESCE(?, notes) WHERE id=?",
+            (status, notes, job_id),
+        )
+        conn.commit()
+
+
+def update(conn, job_id, **fields):
+    cols = ", ".join(f"{k}=?" for k in fields)
+    with _lock:
+        conn.execute(f"UPDATE jobs SET {cols} WHERE id=?", (*fields.values(), job_id))
+        conn.commit()
+
+
+def sync(conn, jobs):
+    """Record this scan's postings. Returns the ids that are new."""
+    with _lock:
+        before = {r["id"] for r in conn.execute("SELECT id FROM jobs")}
+        # Keep each posting's existing row (and status) whichever source finds it.
+        by_canon = {r["canon"]: r["id"] for r in conn.execute("SELECT id, canon FROM jobs WHERE canon IS NOT NULL")}
+        for job in jobs:
+            if job.get("canon") in by_canon:
+                job["id"] = by_canon[job["canon"]]
+            upsert(conn, job)
+        conn.execute(f"UPDATE jobs SET active=0 WHERE last_seen IS NULL OR last_seen < datetime('now','localtime','{STALE_AFTER}')")
+        conn.commit()
+    return [j["id"] for j in jobs if j["id"] not in before]

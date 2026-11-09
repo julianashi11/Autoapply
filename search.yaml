@@ -1,0 +1,19 @@
+# What to look for. Used by the web app, the CLI and the cloud scanner (GitHub Actions).
+# To override something just for this computer, add a `search:` section to profile.yaml.
+
+term: "Summer 2027"
+categories:
+  swe: ["Software", "Software Engineering"]
+  pm: ["Product", "Product Management"]
+  # Uncomment to include ML/data roles under the SWE resume:
+  # swe: ["Software", "Software Engineering", "AI/ML/Data"]
+needs_sponsorship: false         # true = hide roles that don't sponsor / require citizenship
+exclude_title_regex: "new grad|senior|staff|principal|phd|full[- ]time|\\bmba\\b|high school"
+exclude_companies: []            # e.g. ["Company A", "Company B"]
+locations_regex: ""              # e.g. "NY|New York|SF|San Francisco|Remote"; empty = anywhere
+us_only: true                    # company-site scan: skip roles located outside the US
+direct_posted_after: "2026-06-01"  # company-site scan: ignore undated postings older than this
+# Company job boards to scan on top of the ones found automatically. Format:
+#   greenhouse:<board>  lever:<company>  ashby:<company>  smartrecruiters:<company>
+#   workday:<host>/<site>   e.g. workday:nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite
+extra_boards: []

@@ -14,24 +14,15 @@ me:
   major: "Computer Science"
   graduation: "May 2028"
   gpa: ""
+  us_citizen:              # true / false; used to check roles that require U.S. citizenship (ITAR, clearance)
 
 # Absolute or project-relative paths. Use a different resume per role type if you like.
 resume:
   swe: "resumes/resume_swe.pdf"
   pm: "resumes/resume_pm.pdf"
 
-# Which listings to pull from the feed.
-search:
-  term: "Summer 2027"
-  categories:
-    swe: ["Software", "Software Engineering"]
-    pm: ["Product", "Product Management"]
-    # Uncomment to include ML/data roles under the SWE resume:
-    # swe: ["Software", "Software Engineering", "AI/ML/Data"]
-  needs_sponsorship: false         # true = hide roles that don't sponsor / require citizenship
-  exclude_title_regex: "new grad|senior|staff|principal|phd|full[- ]time|\\bmba\\b"
-  exclude_companies: []            # e.g. ["Company A", "Company B"]
-  locations_regex: ""              # e.g. "NY|New York|SF|San Francisco|Remote"; empty = anywhere
+# Search settings live in search.yaml. Add a `search:` section here only to override
+# them on this computer.
 
 # Answers for common application questions. Each key is a regex matched against the
 # question's label (case-insensitive); the first match wins. The tool fills text boxes,
