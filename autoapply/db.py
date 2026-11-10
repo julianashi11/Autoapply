@@ -137,8 +137,11 @@ def sync(conn, jobs, complete=False):
             conn.execute("CREATE TEMP TABLE IF NOT EXISTS open_ids (id TEXT PRIMARY KEY)")
             conn.execute("DELETE FROM open_ids")
             conn.executemany("INSERT OR IGNORE INTO open_ids VALUES (?)", [(j["id"],) for j in jobs])
-            conn.execute("UPDATE jobs SET active=0 WHERE active=1 AND id NOT IN (SELECT id FROM open_ids)")
+            # Roles you added yourself stay until you mark them.
+            conn.execute("UPDATE jobs SET active=0 WHERE active=1 AND COALESCE(source,'') != 'manual' "
+                         "AND id NOT IN (SELECT id FROM open_ids)")
         else:
-            conn.execute(f"UPDATE jobs SET active=0 WHERE last_seen IS NULL OR last_seen < datetime('now','localtime','{STALE_AFTER}')")
+            conn.execute(f"UPDATE jobs SET active=0 WHERE COALESCE(source,'') != 'manual' AND "
+                         f"(last_seen IS NULL OR last_seen < datetime('now','localtime','{STALE_AFTER}'))")
         conn.commit()
     return [j["id"] for j in jobs if j["id"] not in before]

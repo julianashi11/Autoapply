@@ -176,6 +176,7 @@ dialog h3{margin:0 0 6px;font-size:17px}
   <div class="brand"><span class="logo"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 12a8 8 0 0 1 8-8"/><path d="M8 12a4 4 0 0 1 4-4"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><path d="m12 12 6 6"/></svg></span>Autoapply</div>
   <div class="live" id="live"><span class="dot"></span><span id="liveText">Connecting…</span></div>
   <button id="refreshBtn" class="iconbtn" title="Ask the cloud scanner to check now"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.6-6.4L21 8"/><path d="M21 3v5h-5"/></svg>Refresh</button>
+  <button id="addBtn" class="iconbtn primary" title="Add a posting from any job site"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Add job</button>
   <div class="spacer"></div>
   <div class="stats" id="stats"></div>
   <button id="settingsBtn" class="iconbtn"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Settings</button>
@@ -230,6 +231,16 @@ dialog h3{margin:0 0 6px;font-size:17px}
     <button id="keyClear">Remove key</button>
     <button onclick="settings.close()">Cancel</button>
     <button class="primary" id="keySave">Save</button>
+  </div>
+</dialog>
+<dialog id="addDlg">
+  <h3>Add a job posting</h3>
+  <p class="note" style="margin:0 0 10px">Paste the link to any posting (Breezy, Workable, a company careers page…). It's added to your list so you can check your screening odds, tailor your resume and apply.</p>
+  <input id="addUrl" type="url" placeholder="https://…" style="width:100%">
+  <p class="err" id="addErr" style="min-height:1em"></p>
+  <div class="row" style="justify-content:flex-end">
+    <button onclick="addDlg.close()">Cancel</button>
+    <button class="primary" id="addGo">Add job</button>
   </div>
 </dialog>
 <div class="toast" id="toast"></div>
@@ -366,6 +377,7 @@ function renderList(){
     const badges = [
       freshIds.has(j.id) ? `<span class="badge new">NEW</span>` : "",
       early(j) ? `<span class="badge direct" title="${esc(leadText(j))}">Direct</span>` : "",
+      j.source === "manual" ? `<span class="badge">Added by you</span>` : "",
       `<span class="badge">${j.track.toUpperCase()}</span>`,
       j.screen != null ? `<span class="badge ${scoreClass(j.screen)}" title="Estimated chance of passing the resume screen">${screenLabel(j.screen)}</span>` : "",
       j.tailored ? `<span class="badge hi">tailored</span>` : "",
@@ -579,6 +591,23 @@ function nextJob(){
   const nxt = (i >= 0 ? jobs[i+1] : jobs[0]) || jobs[0];
   if (nxt && nxt.id !== sel) openJob(nxt.id); else renderDetail();
 }
+
+// ---------- add a job by link ----------
+$("#addBtn").onclick = () => { $("#addUrl").value = ""; $("#addErr").textContent = ""; $("#addDlg").showModal(); $("#addUrl").focus(); };
+$("#addUrl").addEventListener("keydown", e => { if (e.key === "Enter") $("#addGo").click(); });
+$("#addGo").onclick = async () => {
+  const url = $("#addUrl").value.trim(); if (!url) return;
+  const btn = $("#addGo"); btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Reading posting…'; $("#addErr").textContent = "";
+  try {
+    const d = await api("/api/add", {url});
+    $("#addDlg").close();
+    // Make sure the new role is visible in the list.
+    $("#q").value = ""; $("#status").value = ""; $("#where").value = ""; $("#ats").value = ""; $("#source").value = "";
+    track = ""; $("#trackSeg").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.v === ""));
+    await poll(); toast(`Added ${d.company}: ${d.title}`); openJob(d.id);
+  } catch (e) { $("#addErr").textContent = e.message; }
+  btn.disabled = false; btn.textContent = "Add job";
+};
 
 // ---------- settings ----------
 function openSettings(){ $("#keyInput").value=""; $("#keyStatus").textContent = S.has_key ? "A key is saved." : "No key saved yet.";

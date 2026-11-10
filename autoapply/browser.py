@@ -94,3 +94,53 @@ def page_text(w, url):
         return page.locator("body").inner_text(timeout=5000)
     finally:
         page.close()
+
+
+EXTRACT_JS = r"""
+() => {
+  const txt = el => el ? el.innerText.replace(/\s+\n/g, "\n").trim() : "";
+  let ld = null;
+  for (const s of document.querySelectorAll('script[type="application/ld+json"]')) {
+    try {
+      const j = JSON.parse(s.textContent);
+      const all = Array.isArray(j) ? j : (j["@graph"] || [j]);
+      for (const x of all) if (x && x["@type"] === "JobPosting") ld = x;
+    } catch (e) {}
+  }
+  const meta = n => (document.querySelector(`meta[property="${n}"],meta[name="${n}"]`) || {}).content || "";
+  const pick = sels => { for (const s of sels) { const el = document.querySelector(s); if (el && txt(el)) return el; } return null; };
+  const desc = pick([".position-description", "[class*='job-description']", "[class*='jobDescription']",
+                     "[class*='posting-description']", "[data-testid*='description']", "[class*='description']", "article", "main"]);
+  const loc = pick([".location", "[class*='location']", "[data-testid*='location']", "[class*='Location']"]);
+  let ldLoc = "";
+  if (ld) {
+    const jl = [].concat(ld.jobLocation || []);
+    ldLoc = jl.map(l => { const a = (l && l.address) || {}; return [a.addressLocality, a.addressRegion].filter(Boolean).join(", "); })
+              .filter(Boolean).join("; ");
+    if (!ldLoc && /telecommute|remote/i.test(ld.jobLocationType || "")) ldLoc = "Remote";
+  }
+  return {
+    ld: ld && {title: ld.title || "", company: (ld.hiringOrganization || {}).name || "", location: ldLoc,
+               date: ld.datePosted || "", desc: ld.description || ""},
+    h1: txt(document.querySelector("h1")), og: meta("og:title"), title: document.title, site: meta("og:site_name"),
+    loc: txt(loc).split("\n")[0].slice(0, 120), desc: txt(desc), body: (document.body.innerText || "").slice(0, 30000),
+  };
+}
+"""
+
+
+def extract_posting(w, url):
+    """Reads a job posting page (any site): title, company, location, description."""
+    page = w._bg().new_page()
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=45000)
+        try:
+            page.wait_for_load_state("networkidle", timeout=8000)
+        except Exception:
+            pass
+        page.wait_for_timeout(1000)
+        data = page.evaluate(EXTRACT_JS)
+        data["final_url"] = page.url
+        return data
+    finally:
+        page.close()

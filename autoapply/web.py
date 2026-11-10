@@ -278,6 +278,77 @@ def fit_note(fit, style):
     return notes
 
 
+def add_job(conn, url):
+    """Adds a posting from any job site by its link. Returns the job id."""
+    import hashlib
+    from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
+    from .direct import canon as canon_of, classify
+
+    url = url.strip()
+    if not re.match(r"^https?://", url):
+        url = "https://" + url
+    u = urlparse(url)
+    # Drop tracking parameters (utm_source etc.) so the same posting isn't added twice.
+    q = [(k, v) for k, v in parse_qsl(u.query) if not k.lower().startswith(("utm_", "ref", "source", "gh_src"))]
+    url = urlunparse(u._replace(query=urlencode(q), fragment=""))
+
+    key = canon_of(url) or "manual:" + hashlib.sha1(url.lower().rstrip("/").encode()).hexdigest()[:12]
+    existing = conn.execute("SELECT id FROM jobs WHERE id=? OR canon=? OR url=?", (key, key, url)).fetchone()
+    if existing:
+        db.update(conn, existing["id"], active=1)
+        return existing["id"]
+
+    data = worker.submit(browser.extract_posting, url).result(timeout=90)
+    ld = data.get("ld") or {}
+    raw_title = ld.get("title") or data.get("h1") or data.get("og") or data.get("title") or "Untitled role"
+    page_title = data.get("og") or data.get("title") or ""
+    # "Title at Company" first; otherwise the last part of "Title | Company" / "Title - Company".
+    m = re.match(r"(.+)\s+(?:at|@)\s+(.+?)\s*$", page_title) or re.match(r"(.+)\s+[|–-]\s+([^|–-]+?)\s*$", page_title)
+    host = urlparse(data.get("final_url") or url).netloc.lower()
+    sub = host.split(".")[0]
+    company = (ld.get("company") or (m.group(2) if m else "") or data.get("site")
+               or (sub if sub not in ("www", "jobs", "careers", "boards", "apply", "job-boards") else host.split(".")[-2]))
+    company = company.strip()
+    if company.islower():
+        company = company.replace("-", " ").title()
+    title = re.sub(rf"\s+(at|@|\||-|–)\s+{re.escape(company)}\s*$", "", raw_title, flags=re.I).strip()
+
+    location = (ld.get("location") or data.get("loc") or "").strip()
+    if location.startswith("%"):  # unrendered template label
+        location = ""
+    desc = jd.html_to_text(ld["desc"]) if ld.get("desc") else ""
+    if len(desc) < 300:
+        desc = data.get("desc") or ""
+    if len(desc) < 300:
+        desc = data.get("body") or ""
+    track = classify(title, {"swe": {"ml": True}, "pm": {}}) or ("pm" if re.search(r"product|program", title, re.I) else "swe")
+    posted = None
+    if ld.get("date"):
+        try:
+            from datetime import datetime
+            posted = int(datetime.fromisoformat(ld["date"].replace("Z", "+00:00")).timestamp())
+        except ValueError:
+            posted = None
+
+    job = {
+        "id": key, "canon": key, "company": company, "title": title, "url": url,
+        "locations": [location] if location else [], "category": "manual", "track": track,
+        "ats": feed.ats_for(url) if feed.ats_for(url) != "other" else (host.split(".")[-2] if "." in host else "other"),
+        "sponsorship": None, "date_posted": posted or int(time.time()), "source": "manual", "found_by": "manual",
+    }
+    with db._lock:
+        db.upsert(conn, job)
+        conn.commit()
+    score = None
+    try:
+        score = keywords.match(desc, base_resume_text(load_profile(), track), company)["score"]
+    except Exception:
+        pass
+    db.update(conn, key, jd=desc[:30000], score=score)
+    return key
+
+
 # ---------- HTTP ----------
 
 class Handler(BaseHTTPRequestHandler):
@@ -321,6 +392,12 @@ class Handler(BaseHTTPRequestHandler):
                 threading.Thread(target=refresh, daemon=True).start()
                 return self._send(200, {"ok": True, "message": "Cloud scan started; new roles show up here in about 8 minutes."
                                         if started else "Checked for the latest results."})
+            if path == "/api/add" and method == "POST":
+                url = (self._body().get("url") or "").strip()
+                if not url:
+                    return self._send(400, {"error": "Paste a job posting link."})
+                job_id = add_job(conn, url)
+                return self._send(200, job_detail(conn, job_id))
             if path == "/api/skills" and method == "POST":
                 body = self._body()
                 st = load_settings()
